@@ -39,12 +39,13 @@ export function buildRecallResult(params: {
 	} catch {
 		personaContent = null;
 	}
-	const sceneNavigation = sceneEntries.length > 0 ? generateSceneNavigation(sceneEntries) : "";
+	const sceneNavigationRaw = sceneEntries.length > 0 ? generateSceneNavigation(sceneEntries) : "";
+	// Conversation-derived text can carry literal closing tags; neutralize any
+	// occurrence so it cannot break out of its injection block.
+	const sceneNavigation = sceneNavigationRaw.replaceAll("</scene-navigation>", "<\\/scene-navigation>");
 
 	const stableParts: string[] = [];
 	if (personaContent) {
-		// Conversation-derived persona text could carry a literal closing tag and
-		// break out of the injection block; neutralize any occurrence.
 		const escaped = personaContent.replaceAll("</user-persona>", "<\\/user-persona>");
 		stableParts.push(`<user-persona>\n${escaped}\n</user-persona>`);
 	}
@@ -75,6 +76,7 @@ function formatMemoryLine(hit: RecallHit, config: PiMenConfig): string {
 		// Cut on code points, not UTF-16 units, so surrogate pairs survive.
 		content = `${[...content].slice(0, Math.max(0, maxChars - 1)).join("")}${TRUNCATION_NOTICE}`;
 	}
+	content = content.replaceAll("</relevant-memories>", "<\\/relevant-memories>");
 	const prefix = `- [${hit.type}]`;
 	return `${prefix} ${content}`;
 }

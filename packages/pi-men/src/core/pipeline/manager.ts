@@ -222,7 +222,13 @@ export class PipelineManager {
 		if (current.length > 0) chunks.push(current);
 
 		for (const chunk of chunks.slice(0, MAX_L1_CHUNKS_PER_PASS)) {
-			const background = this.store.conversationsBefore(chunk[0]!.timestamp, BACKGROUND_MESSAGES);
+			// Background context only; exclude the chunk's own messages so its
+			// first message is not fed to the extractor twice.
+			const chunkIds = new Set(chunk.map((message) => message.id));
+			const background = this.store
+				.conversationsBefore(chunk[0]!.timestamp, BACKGROUND_MESSAGES + chunk.length)
+				.filter((message) => !chunkIds.has(message.id))
+				.slice(0, BACKGROUND_MESSAGES);
 			const scenes = await extractMemories(this.runner, this.config, {
 				newMessages: chunk.map((message) => ({
 					id: message.id,
@@ -307,11 +313,12 @@ export class PipelineManager {
 		await this.awaitQuiet();
 		if (this.destroyed) return;
 		this.running = true;
-		try {
-			await this.runL2Inner();
-		} finally {
+		const task = this.runL2Inner().finally(() => {
 			this.running = false;
-		}
+			if (this.inFlight === task) this.inFlight = null;
+		});
+		this.inFlight = task;
+		await task;
 	}
 
 	/**
@@ -373,11 +380,12 @@ export class PipelineManager {
 		await this.awaitQuiet();
 		if (this.destroyed) return;
 		this.running = true;
-		try {
-			await this.runL3Inner();
-		} finally {
+		const task = this.runL3Inner().finally(() => {
 			this.running = false;
-		}
+			if (this.inFlight === task) this.inFlight = null;
+		});
+		this.inFlight = task;
+		await task;
 	}
 
 	/** L3 body without the re-entrancy guard: L1/L2 callers already hold the lock. */

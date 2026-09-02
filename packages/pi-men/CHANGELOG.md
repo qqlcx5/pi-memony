@@ -22,7 +22,8 @@
 - Updated/merged L1 records no longer keep vectors of their pre-merge content when re-embedding fails, and a background backfill can no longer resurrect a stale vector.
 - Recall timeouts no longer leave an unreferenced timer keeping the process alive; vector backfill runs in the background so `initialize()` does not delay the first recall.
 - `scene_index.json` is written atomically and rebuilt from the META headers inside the scene blocks when lost or corrupt; scene_blocks are snapshotted under `.backup/scene_blocks/` (default 10) before each L2 pass.
-- Persona content injected into `<user-persona>` escapes any literal closing tag so conversation-derived text cannot break out of the block; per-memory truncation cuts on code points and marks the truncation.
+- Injected text cannot break out of its injection block: literal closing tags in persona, scene-navigation, and memory content are neutralized; per-memory truncation cuts on code points and marks the truncation.
+- The records audit JSONL no longer lists replaced ids that were not actually removed when a fold degrades to a store.
 
 ### Changed
 

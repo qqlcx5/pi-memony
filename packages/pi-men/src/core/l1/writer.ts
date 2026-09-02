@@ -104,7 +104,7 @@ export class MemoryWriter {
 					};
 					this.store.insertMemory(record);
 					result.stored.push(record);
-					this.appendAudit({ ...decision, action: "store" }, record.content, record.id);
+					this.appendAudit({ ...decision, action: "store" }, record.content, record.id, []);
 					continue;
 				}
 				const targets = this.store.getMemories(decision.targetIds);
@@ -128,10 +128,11 @@ export class MemoryWriter {
 					};
 					this.store.insertMemory(record);
 					result.stored.push(record);
-					this.appendAudit({ ...decision, action: "store" }, record.content, record.id);
+					this.appendAudit({ ...decision, action: "store" }, record.content, record.id, []);
 					continue;
 				}
 				const target = reusable[0]!;
+				const removedNow = reusable.slice(1).map((extra) => extra.id);
 				const timestamps = unionTimestamps(
 					target.timestamps,
 					decision.mergedTimestamps ?? [],
@@ -150,10 +151,10 @@ export class MemoryWriter {
 				this.store.updateMemory(target.id, fields);
 				const updated: MemoryRecord = { ...target, ...fields };
 				result.updated.push(updated);
-				result.removedIds.push(...reusable.slice(1).map((extra) => extra.id));
-				if (reusable.length > 1) this.store.deleteMemories(reusable.slice(1).map((extra) => extra.id));
+				result.removedIds.push(...removedNow);
+				if (removedNow.length > 0) this.store.deleteMemories(removedNow);
 				for (const used of reusable) rewritten.add(used.id);
-				this.appendAudit(decision, updated.content, target.id);
+				this.appendAudit(decision, updated.content, target.id, removedNow);
 			} catch (error) {
 				this.logger?.warn?.(`[pi-men] failed to apply ${decision.action} decision: ${errorMessage(error)}`);
 			}
@@ -208,7 +209,12 @@ export class MemoryWriter {
 		}
 	}
 
-	private appendAudit(decision: DedupDecision, content: string, targetId?: string): void {
+	private appendAudit(
+		decision: DedupDecision,
+		content: string,
+		targetId?: string,
+		replacedIds: readonly string[] = decision.targetIds,
+	): void {
 		try {
 			mkdirSync(this.paths.recordsDir, { recursive: true });
 			const day = new Date().toISOString().slice(0, 10);
@@ -216,7 +222,7 @@ export class MemoryWriter {
 				at: new Date().toISOString(),
 				action: decision.action,
 				target: targetId ?? decision.recordId,
-				replaced: decision.targetIds,
+				replaced: replacedIds,
 				content,
 			});
 			appendFileSync(join(this.paths.recordsDir, `${day}.jsonl`), `${line}\n`, "utf8");
