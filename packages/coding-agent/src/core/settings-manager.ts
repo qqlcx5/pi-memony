@@ -102,6 +102,8 @@ export interface Settings {
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	/** pi-men memory engine; `enabled: false` disables the built-in memory extension. */
+	memory?: { enabled?: boolean };
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;

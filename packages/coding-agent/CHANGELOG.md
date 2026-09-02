@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the built-in `pi-men` memory extension, on by default in all run modes: captures turns into a local four-layer memory store (conversations, atomic memories, scene blocks, persona) and injects recalled context plus `memory_search`/`conversation_search` tools into sessions. Disable with `memory.enabled: false` in settings.json; configure via `~/.pi/agent/memory.json` and manage with `/remember` and `/memory`.
+
 ### Fixed
 
 - Fixed the write tool reporting UTF-16 code-unit counts as byte counts by removing the misleading count ([#8979](https://github.com/earendil-works/pi/issues/8979)).
