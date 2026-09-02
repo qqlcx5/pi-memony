@@ -73,12 +73,19 @@ export class PiMen {
 		return this.config;
 	}
 
-	/** Create directories, sync embedding metadata, and backfill vectors. */
+	/** Create directories, apply L0 retention, sync embedding metadata, and backfill vectors. */
 	async initialize(): Promise<void> {
 		mkdirSync(this.paths.conversationsDir, { recursive: true });
 		mkdirSync(this.paths.recordsDir, { recursive: true });
 		mkdirSync(this.paths.sceneBlocksDir, { recursive: true });
 		mkdirSync(this.paths.metadataDir, { recursive: true });
+		if (this.config.capture.l0RetentionDays > 0) {
+			try {
+				this.recorder.cleanup(this.config.capture.l0RetentionDays);
+			} catch (error) {
+				this.logger?.warn?.(`[pi-men] L0 retention cleanup failed: ${errorMessage(error)}`);
+			}
+		}
 		if (!this.embedding.isReady()) return;
 		const changed = this.store.setEmbeddingMeta(
 			this.config.embedding.provider,
@@ -86,7 +93,9 @@ export class PiMen {
 			this.config.embedding.dimensions,
 		);
 		if (changed) this.logger?.info?.("[pi-men] embedding setup changed; stored vectors cleared");
-		await this.backfillVectors();
+		// Backfill in the background: initialize runs on the prompt path and
+		// re-embedding a large store must not delay the first recall.
+		void this.backfillVectors();
 	}
 
 	/** Embed any L1 records that lack a stored vector (provider change or first enable). */
@@ -100,7 +109,13 @@ export class PiMen {
 				const vectors = await this.embedding.embed(batch.map((record) => record.content));
 				for (let j = 0; j < batch.length; j++) {
 					const vector = vectors[j];
-					if (vector) this.store.putVector("l1", batch[j]!.id, vector);
+					// The record may have been updated while embedding was in
+					// flight; only store vectors whose content still matches the
+					// snapshot, never resurrect stale text.
+					const current = this.store.getMemories([batch[j]!.id])[0];
+					if (vector && current && current.content === batch[j]!.content) {
+						this.store.putVector("l1", batch[j]!.id, vector);
+					}
 				}
 			}
 		} catch (error) {
@@ -131,7 +146,12 @@ export class PiMen {
 	}
 
 	private async recallInner(userText: string): Promise<RecallResult | undefined> {
-		const hits = await this.searchMemoriesInternal(userText, this.config.recall.maxResults);
+		// Recall injects at most maxResults memories (the oversized fetch below
+		// only widens the fusion pool, not the injected set).
+		const hits = (await this.searchMemoriesInternal(userText, this.config.recall.maxResults)).slice(
+			0,
+			this.config.recall.maxResults,
+		);
 		const budgeted = applyRecallBudget(hits, this.config.recall.maxTotalRecallChars);
 		return buildRecallResult({
 			hits: budgeted,
@@ -158,27 +178,37 @@ export class PiMen {
 		const text = query.trim();
 		if (!text) return [];
 		const oversized = limit * 4;
-		const matchQuery = buildFtsQuery(text);
-		const keywordHits = matchQuery
-			? this.store.searchMemoriesKeyword(matchQuery, oversized)
-			: this.store.searchMemoriesLike(text, oversized);
-
-		let vectorIds: string[] = [];
+		// "embedding" runs pure vector search; on an embed failure it falls back
+		// to keyword so a transient outage cannot take the whole recall down.
+		const vectorHits: string[] = [];
+		let vectorFailed = false;
 		if (this.embedding.isReady() && this.store.vectorCount("l1") > 0 && this.config.recall.strategy !== "keyword") {
-			const [queryVector] = await this.embedding.embed([text]);
-			if (queryVector) {
-				vectorIds = this.store
-					.searchVectors("l1", queryVector, oversized)
-					.filter((hit) => hit.similarity >= this.config.recall.scoreThreshold)
-					.map((hit) => hit.id);
+			try {
+				const [queryVector] = await this.embedding.embed([text]);
+				if (queryVector) {
+					vectorHits.push(
+						...this.store
+							.searchVectors("l1", queryVector, oversized)
+							.filter((hit) => hit.similarity >= this.config.recall.scoreThreshold)
+							.map((hit) => hit.id),
+					);
+				}
+			} catch (error) {
+				vectorFailed = true;
+				this.logger?.warn?.(`[pi-men] vector recall failed; falling back to keyword: ${errorMessage(error)}`);
 			}
 		}
 
-		const fused = rrfFuse(
-			keywordHits.map((hit) => hit.id),
-			vectorIds,
-			oversized,
-		);
+		let keywordIds: string[] = [];
+		if (this.config.recall.strategy !== "embedding" || vectorFailed) {
+			const matchQuery = buildFtsQuery(text);
+			const keywordHits = matchQuery
+				? this.store.searchMemoriesKeyword(matchQuery, oversized)
+				: this.store.searchMemoriesLike(text, oversized);
+			keywordIds = keywordHits.map((hit) => hit.id);
+		}
+
+		const fused = rrfFuse(keywordIds, vectorHits, oversized);
 		const records = this.store.getMemories(fused.map((hit) => hit.id));
 		const scoreById = new Map(fused.map((hit) => [hit.id, hit.score]));
 		return records
@@ -255,7 +285,9 @@ async function withTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T> {
 	return Promise.race([
 		task,
 		new Promise<T>((_resolve, reject) => {
-			setTimeout(() => reject(new Error(`recall timed out after ${timeoutMs}ms`)), timeoutMs);
+			const timer = setTimeout(() => reject(new Error(`recall timed out after ${timeoutMs}ms`)), timeoutMs);
+			// An unhandled losing timer must not keep the process alive.
+			timer.unref?.();
 		}),
 	]);
 }

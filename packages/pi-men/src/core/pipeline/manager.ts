@@ -10,14 +10,18 @@ import type { MemoryWriter } from "../l1/writer.ts";
 import type { PersonaResult } from "../persona/persona-generator.ts";
 import { generatePersona, writePersona } from "../persona/persona-generator.ts";
 import { extractScenes } from "../scene/scene-extractor.ts";
-import { changedScenes, readSceneIndex, type SceneIndexEntry } from "../scene/scene-store.ts";
+import { backupSceneBlocks, changedScenes, readSceneIndex, type SceneIndexEntry } from "../scene/scene-store.ts";
 import type { StoragePaths } from "../storage/paths.ts";
 import type { SqliteMemoryStore } from "../store/sqlite-store.ts";
 
 const CHECKPOINT_VERSION = 1;
-/** Hard caps for one L1 batch. */
+/** Hard caps for one L1 pass. */
 const MAX_BATCH_MESSAGES = 400;
 const MAX_BATCH_CHARS = 120_000;
+/** Chunks (extraction LLM calls) processed per L1 pass; the rest stays pending. */
+const MAX_L1_CHUNKS_PER_PASS = 3;
+/** Chunks (scene LLM calls) processed per L2 pass. */
+const MAX_L2_CHUNKS_PER_PASS = 3;
 /** Messages from just before the batch kept as extraction background context. */
 const BACKGROUND_MESSAGES = 6;
 const SCENE_BATCH_SIZE = 40;
@@ -32,6 +36,9 @@ export interface PipelineCheckpoint {
 	lastL2At: string | null;
 	lastL3At: string | null;
 	lastL1MessageTimestamp: number | null;
+	lastL1MessageId: string | null;
+	lastL2Watermark: string | null;
+	lastL2WatermarkId: string | null;
 	lastL3SceneSync: string | null;
 	unprocessedMemoriesSinceL3: number;
 }
@@ -46,6 +53,9 @@ function defaultCheckpoint(): PipelineCheckpoint {
 		lastL2At: null,
 		lastL3At: null,
 		lastL1MessageTimestamp: null,
+		lastL1MessageId: null,
+		lastL2Watermark: null,
+		lastL2WatermarkId: null,
 		lastL3SceneSync: null,
 		unprocessedMemoriesSinceL3: 0,
 	};
@@ -96,7 +106,13 @@ export class PipelineManager {
 		try {
 			if (!existsSync(this.paths.checkpointFile)) return defaultCheckpoint();
 			const parsed = JSON.parse(readFileSync(this.paths.checkpointFile, "utf8")) as Partial<PipelineCheckpoint>;
-			return { ...defaultCheckpoint(), ...parsed, version: CHECKPOINT_VERSION };
+			const merged = { ...defaultCheckpoint(), ...parsed, version: CHECKPOINT_VERSION };
+			// Checkpoints from before the L2 watermark existed: the old lastL2At
+			// marker is the closest approximation, so no records are reprocessed.
+			if (merged.lastL2Watermark === null && merged.lastL2At !== null) {
+				merged.lastL2Watermark = merged.lastL2At;
+			}
+			return merged;
 		} catch {
 			return defaultCheckpoint();
 		}
@@ -129,9 +145,12 @@ export class PipelineManager {
 	}
 
 	private currentThreshold(): number {
-		if (!this.config.pipeline.enableWarmup) return this.config.pipeline.everyNConversations;
-		const warmup = WARMUP_SCHEDULE[Math.min(this.checkpoint.warmupStage, WARMUP_SCHEDULE.length - 1)];
-		return Math.min(warmup ?? this.config.pipeline.everyNConversations, this.config.pipeline.everyNConversations);
+		const everyN = this.config.pipeline.everyNConversations;
+		if (!this.config.pipeline.enableWarmup) return everyN;
+		// Warmup doubles (1→2→4) and then settles on everyNConversations; the
+		// schedule must converge instead of freezing on its last entry.
+		const scheduled = WARMUP_SCHEDULE[this.checkpoint.warmupStage];
+		return Math.min(scheduled ?? everyN, everyN);
 	}
 
 	private resetIdleTimer(): void {
@@ -171,65 +190,88 @@ export class PipelineManager {
 
 	private async runL1Inner(): Promise<void> {
 		if (!this.config.extraction.enabled) return;
-		const since = this.checkpoint.lastL1MessageTimestamp ?? 0;
-		const batch = this.store.conversationsSince(since, MAX_BATCH_MESSAGES);
-		if (batch.length === 0) {
+		const cursor = {
+			timestamp: this.checkpoint.lastL1MessageTimestamp ?? 0,
+			id: this.checkpoint.lastL1MessageId,
+		};
+		const pending = this.store.conversationsSince(cursor, MAX_BATCH_MESSAGES);
+		if (pending.length === 0) {
 			this.checkpoint.conversationsSinceL1 = 0;
 			this.saveCheckpoint();
 			return;
 		}
-		// Trim by chars from the end so the most recent context survives.
-		const trimmed: typeof batch = [];
+		// Turns captured while this pass runs must keep their threshold credit:
+		// subtract the triggering count instead of zeroing the counter.
+		const creditAtStart = this.checkpoint.conversationsSinceL1;
+		// Split into char-bounded chunks (a single oversized message gets its own
+		// chunk) so prompts stay bounded without dropping any message. Chunks
+		// beyond the per-pass cap stay pending; the cursor only advances over
+		// processed chunks, so nothing is silently skipped.
+		const chunks: (typeof pending)[] = [];
+		let current: typeof pending = [];
 		let chars = 0;
-		for (let i = batch.length - 1; i >= 0; i--) {
-			const message = batch[i]!;
-			if (trimmed.length > 0 && chars + message.content.length > MAX_BATCH_CHARS) break;
-			chars += message.content.length;
-			trimmed.unshift(message);
-		}
-		const firstTimestamp = trimmed[0]!.timestamp;
-		const background = this.store.conversationsBefore(firstTimestamp, BACKGROUND_MESSAGES);
-
-		const scenes = await extractMemories(this.runner, this.config, {
-			newMessages: trimmed.map((message) => ({
-				id: message.id,
-				role: message.role,
-				content: message.content,
-				timestamp: message.timestamp,
-			})),
-			backgroundMessages: background.map((message) => ({
-				id: message.id,
-				role: message.role,
-				content: message.content,
-				timestamp: message.timestamp,
-			})),
-			previousSceneName: this.checkpoint.previousSceneName ?? undefined,
-		});
-
-		const candidates = scenes.flatMap((scene) => scene.memories);
-		if (candidates.length > 0) {
-			let decisions: DedupDecision[] = candidates.map((memory) => ({
-				recordId: memory.recordId,
-				action: "store" as const,
-				targetIds: [],
-			}));
-			if (this.config.extraction.enableDedup) {
-				const matches = buildCandidateMatches(candidates, this.store);
-				decisions = await dedupMemories({ runner: this.runner, config: this.config, matches });
+		for (const message of pending) {
+			if (current.length > 0 && chars + message.content.length > MAX_BATCH_CHARS) {
+				chunks.push(current);
+				current = [];
+				chars = 0;
 			}
-			const candidateMap = new Map(candidates.map((memory) => [memory.recordId, memory]));
-			const result = await this.writer.applyDecisions(decisions, candidateMap, {
-				sessionKey: trimmed[trimmed.length - 1]!.sessionKey,
-			});
-			this.checkpoint.unprocessedMemoriesSinceL3 += result.stored.length + result.updated.length;
+			current.push(message);
+			chars += message.content.length;
 		}
+		if (current.length > 0) chunks.push(current);
 
-		const lastScene = [...scenes].reverse().find((scene) => scene.sceneName);
-		if (lastScene) this.checkpoint.previousSceneName = lastScene.sceneName;
-		this.checkpoint.lastL1MessageTimestamp = batch[batch.length - 1]!.timestamp;
-		this.checkpoint.conversationsSinceL1 = 0;
+		for (const chunk of chunks.slice(0, MAX_L1_CHUNKS_PER_PASS)) {
+			const background = this.store.conversationsBefore(chunk[0]!.timestamp, BACKGROUND_MESSAGES);
+			const scenes = await extractMemories(this.runner, this.config, {
+				newMessages: chunk.map((message) => ({
+					id: message.id,
+					role: message.role,
+					content: message.content,
+					timestamp: message.timestamp,
+				})),
+				backgroundMessages: background.map((message) => ({
+					id: message.id,
+					role: message.role,
+					content: message.content,
+					timestamp: message.timestamp,
+				})),
+				previousSceneName: this.checkpoint.previousSceneName ?? undefined,
+			});
+
+			const candidates = scenes.flatMap((scene) => scene.memories);
+			if (candidates.length > 0) {
+				let decisions: DedupDecision[] = candidates.map((memory) => ({
+					recordId: memory.recordId,
+					action: "store" as const,
+					targetIds: [],
+				}));
+				if (this.config.extraction.enableDedup) {
+					const matches = buildCandidateMatches(candidates, this.store);
+					decisions = await dedupMemories({
+						runner: this.runner,
+						config: this.config,
+						matches,
+						logger: this.logger,
+					});
+				}
+				const candidateMap = new Map(candidates.map((memory) => [memory.recordId, memory]));
+				const result = await this.writer.applyDecisions(decisions, candidateMap, {
+					sessionKey: chunk[chunk.length - 1]!.sessionKey,
+				});
+				this.checkpoint.unprocessedMemoriesSinceL3 += result.stored.length + result.updated.length;
+			}
+
+			const lastScene = [...scenes].reverse().find((scene) => scene.sceneName);
+			if (lastScene) this.checkpoint.previousSceneName = lastScene.sceneName;
+			const last = chunk[chunk.length - 1]!;
+			this.checkpoint.lastL1MessageTimestamp = last.timestamp;
+			this.checkpoint.lastL1MessageId = last.id;
+			this.checkpoint.lastL1At = new Date().toISOString();
+			this.saveCheckpoint();
+		}
+		this.checkpoint.conversationsSinceL1 = Math.max(0, this.checkpoint.conversationsSinceL1 - creditAtStart);
 		this.checkpoint.warmupStage = Math.min(this.checkpoint.warmupStage + 1, WARMUP_SCHEDULE.length);
-		this.checkpoint.lastL1At = new Date().toISOString();
 		this.saveCheckpoint();
 
 		this.scheduleL2();
@@ -246,57 +288,107 @@ export class PipelineManager {
 		this.l2Timer.unref?.();
 	}
 
+	/** Wait until any in-flight pipeline pass finishes. */
+	private async awaitQuiet(): Promise<void> {
+		while (this.running && !this.destroyed) {
+			if (this.inFlight) {
+				await this.inFlight;
+			} else {
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			}
+		}
+	}
+
 	/** Run one L2 scene consolidation pass; never throws. */
 	async runL2(): Promise<void> {
-		if (this.destroyed || this.running) return;
-		const now = Date.now();
-		const lastL2 = this.checkpoint.lastL2At ? Date.parse(this.checkpoint.lastL2At) : 0;
-		if (now - lastL2 < this.config.pipeline.l2MinIntervalSeconds * 1000) return;
-		// Force a pass when the max interval has elapsed with pending memories.
+		if (this.destroyed) return;
+		// An explicit L2 request must not be silently swallowed by an in-flight
+		// pass; queue behind it instead.
+		await this.awaitQuiet();
+		if (this.destroyed) return;
 		this.running = true;
 		try {
-			const memories = this.store.memoriesUpdatedSince(this.checkpoint.lastL2At ?? "", SCENE_BATCH_SIZE);
-			if (memories.length === 0) {
-				this.checkpoint.lastL2At = new Date().toISOString();
-				this.saveCheckpoint();
-				return;
-			}
-			const existingIndex = readSceneIndex(this.paths);
-			await extractScenes({
-				runner: this.runner,
-				config: this.config,
-				paths: this.paths,
-				memories,
-				existingIndex,
-				logger: this.logger,
-			});
-			this.checkpoint.lastL2At = new Date().toISOString();
-			this.saveCheckpoint();
-			await this.maybeRunL3();
-		} catch (error) {
-			this.logger?.warn?.(`[pi-men] L2 pipeline failed: ${errorMessage(error)}`);
+			await this.runL2Inner();
 		} finally {
 			this.running = false;
 		}
 	}
 
+	/**
+	 * L2 is triggered only after an L1 pass (scheduleL2). The min interval
+	 * throttles passes while L1 fires more often than l2MinIntervalSeconds; a
+	 * backlog older than l2MaxIntervalSeconds forces a pass through. The
+	 * (updated_time, id) watermark advances only over consolidated records, so
+	 * a backlog larger than one chunk is continued by the next pass instead of
+	 * being skipped.
+	 */
+	private async runL2Inner(): Promise<void> {
+		const cursor = { updatedAt: this.checkpoint.lastL2Watermark ?? "", id: this.checkpoint.lastL2WatermarkId };
+		if (!this.store.hasMemoriesUpdatedSince(cursor)) {
+			this.checkpoint.lastL2At = new Date().toISOString();
+			this.saveCheckpoint();
+			return;
+		}
+		const elapsed = Date.now() - (this.checkpoint.lastL2At ? Date.parse(this.checkpoint.lastL2At) : 0);
+		const withinMin = elapsed >= 0 && elapsed < this.config.pipeline.l2MinIntervalSeconds * 1000;
+		const overdue = elapsed >= this.config.pipeline.l2MaxIntervalSeconds * 1000;
+		if (withinMin && !overdue) return;
+		try {
+			backupSceneBlocks(this.paths, this.config.persona.sceneBackupCount, this.logger);
+			for (let chunk = 0; chunk < MAX_L2_CHUNKS_PER_PASS; chunk++) {
+				const memories = this.store.memoriesUpdatedSince(cursor, SCENE_BATCH_SIZE);
+				if (memories.length === 0) break;
+				const existingIndex = readSceneIndex(this.paths);
+				await extractScenes({
+					runner: this.runner,
+					config: this.config,
+					paths: this.paths,
+					memories,
+					existingIndex,
+					logger: this.logger,
+				});
+				const last = memories[memories.length - 1]!;
+				cursor.updatedAt = last.updatedAt;
+				cursor.id = last.id;
+				this.checkpoint.lastL2Watermark = last.updatedAt;
+				this.checkpoint.lastL2WatermarkId = last.id;
+				this.saveCheckpoint();
+			}
+			this.checkpoint.lastL2At = new Date().toISOString();
+			this.saveCheckpoint();
+			await this.maybeRunL3();
+		} catch (error) {
+			this.logger?.warn?.(`[pi-men] L2 pipeline failed: ${errorMessage(error)}`);
+		}
+	}
+
 	private async maybeRunL3(): Promise<void> {
 		if (this.checkpoint.unprocessedMemoriesSinceL3 < this.config.persona.triggerEveryN) return;
-		await this.runL3();
+		await this.runL3Inner();
 	}
 
 	/** Run one L3 persona generation pass; never throws. */
 	async runL3(): Promise<void> {
-		if (this.destroyed || this.running) return;
+		if (this.destroyed) return;
+		await this.awaitQuiet();
+		if (this.destroyed) return;
 		this.running = true;
+		try {
+			await this.runL3Inner();
+		} finally {
+			this.running = false;
+		}
+	}
+
+	/** L3 body without the re-entrancy guard: L1/L2 callers already hold the lock. */
+	private async runL3Inner(): Promise<void> {
 		try {
 			const entries = readSceneIndex(this.paths);
 			const changed = changedScenes(entries, this.checkpoint.lastL3SceneSync);
-			if (changed.length === 0) {
-				this.checkpoint.unprocessedMemoriesSinceL3 = 0;
-				this.saveCheckpoint();
-				return;
-			}
+			// No consolidated scenes yet (e.g. L2 has not run since the last
+			// persona pass): keep the trigger count so the memories are not lost;
+			// this branch is a cheap index scan with no LLM call.
+			if (changed.length === 0) return;
 			const existingPersona = existsSync(this.paths.personaFile)
 				? readFileSync(this.paths.personaFile, "utf8")
 				: null;
@@ -315,8 +407,6 @@ export class PipelineManager {
 			this.saveCheckpoint();
 		} catch (error) {
 			this.logger?.warn?.(`[pi-men] L3 pipeline failed: ${errorMessage(error)}`);
-		} finally {
-			this.running = false;
 		}
 	}
 

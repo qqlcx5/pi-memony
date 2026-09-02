@@ -34,14 +34,17 @@ export async function extractMemories(
 	});
 	const array = extractJsonArray(raw);
 	const allowWorkTypes = config.promptMode === "code";
+	const cap = config.extraction.maxMemoriesPerSession;
 	const scenes: SceneExtraction[] = [];
+	// Cap counts across all scenes, not per scene (one cap per extraction pass).
+	let total = 0;
 	for (const item of array) {
 		if (typeof item !== "object" || item === null) continue;
 		const record = item as Record<string, unknown>;
 		const sceneName = typeof record.scene_name === "string" ? record.scene_name.trim() : "";
 		if (!sceneName) continue;
 		const memories: ExtractedMemory[] = [];
-		if (Array.isArray(record.memories)) {
+		if (Array.isArray(record.memories) && total < cap) {
 			for (const entry of record.memories) {
 				if (typeof entry !== "object" || entry === null) continue;
 				const candidate = entry as Record<string, unknown>;
@@ -62,11 +65,19 @@ export async function extractMemories(
 					metadata: parseMetadata(candidate.metadata),
 				});
 			}
+			const taken = memories.slice(0, cap - total);
+			total += taken.length;
+			scenes.push({
+				sceneName,
+				messageIds: toStringArray(record.message_ids),
+				memories: taken,
+			});
+			continue;
 		}
 		scenes.push({
 			sceneName,
 			messageIds: toStringArray(record.message_ids),
-			memories: memories.slice(0, config.extraction.maxMemoriesPerSession),
+			memories: [],
 		});
 	}
 	return scenes;

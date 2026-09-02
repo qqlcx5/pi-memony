@@ -49,6 +49,11 @@ export class MemoryWriter {
 	): Promise<WriteResult> {
 		const result: WriteResult = { stored: [], updated: [], removedIds: [], skipped: 0 };
 		const now = new Date().toISOString();
+		// Records already rewritten by an earlier decision in this batch: a later
+		// fold into them would clobber that content (its merged text was computed
+		// against the pre-update snapshot), so the later decision degrades to a
+		// plain store instead.
+		const rewritten = new Set<string>();
 		for (const decision of decisions) {
 			const candidate = candidates.get(decision.recordId);
 			if (!candidate) continue;
@@ -79,10 +84,32 @@ export class MemoryWriter {
 					this.appendAudit(decision, record.content, record.id);
 					continue;
 				}
-				// update / merge
-				if (!decision.mergedContent || !decision.mergedType) continue;
+				// update / merge with unusable merge payload: keep the candidate as
+				// a plain new record rather than dropping it.
+				if (!decision.mergedContent || !decision.mergedType) {
+					const record: MemoryRecord = {
+						id: generateMemoryId(),
+						content: candidate.content,
+						type: candidate.type,
+						priority: candidate.priority,
+						sceneName: candidate.sceneName,
+						sourceMessageIds: candidate.sourceMessageIds,
+						metadata: candidate.metadata,
+						timestamps: [now],
+						createdAt: now,
+						updatedAt: now,
+						version: 1,
+						sessionKey: source.sessionKey,
+						...(source.cwd ? { cwd: source.cwd } : {}),
+					};
+					this.store.insertMemory(record);
+					result.stored.push(record);
+					this.appendAudit({ ...decision, action: "store" }, record.content, record.id);
+					continue;
+				}
 				const targets = this.store.getMemories(decision.targetIds);
-				if (targets.length === 0) {
+				const reusable = targets.filter((target) => !rewritten.has(target.id));
+				if (reusable.length === 0) {
 					// Nothing to fold into: fall back to storing as a new record.
 					const record: MemoryRecord = {
 						id: generateMemoryId(),
@@ -104,16 +131,18 @@ export class MemoryWriter {
 					this.appendAudit({ ...decision, action: "store" }, record.content, record.id);
 					continue;
 				}
-				const target = targets[0]!;
+				const target = reusable[0]!;
 				const timestamps = unionTimestamps(
 					target.timestamps,
 					decision.mergedTimestamps ?? [],
-					targets.slice(1).flatMap((extra) => extra.timestamps),
+					reusable.slice(1).flatMap((extra) => extra.timestamps),
 				);
 				const fields = {
 					content: decision.mergedContent,
 					type: decision.mergedType,
 					priority: decision.mergedPriority ?? target.priority,
+					// Merged records follow the latest conversation's scene.
+					sceneName: candidate.sceneName,
 					timestamps,
 					version: target.version + 1,
 					updatedAt: now,
@@ -121,14 +150,18 @@ export class MemoryWriter {
 				this.store.updateMemory(target.id, fields);
 				const updated: MemoryRecord = { ...target, ...fields };
 				result.updated.push(updated);
-				result.removedIds.push(...targets.slice(1).map((extra) => extra.id));
-				if (targets.length > 1) this.store.deleteMemories(targets.slice(1).map((extra) => extra.id));
+				result.removedIds.push(...reusable.slice(1).map((extra) => extra.id));
+				if (reusable.length > 1) this.store.deleteMemories(reusable.slice(1).map((extra) => extra.id));
+				for (const used of reusable) rewritten.add(used.id);
 				this.appendAudit(decision, updated.content, target.id);
 			} catch (error) {
 				this.logger?.warn?.(`[pi-men] failed to apply ${decision.action} decision: ${errorMessage(error)}`);
 			}
 		}
-		await this.embedRecords([...result.stored, ...result.updated]);
+		await this.embedRecords(
+			[...result.stored, ...result.updated],
+			result.updated.map((record) => record.id),
+		);
 		return result;
 	}
 
@@ -156,7 +189,10 @@ export class MemoryWriter {
 		return record;
 	}
 
-	private async embedRecords(records: readonly MemoryRecord[]): Promise<void> {
+	private async embedRecords(
+		records: readonly MemoryRecord[],
+		staleIdsOnFailure: readonly string[] = [],
+	): Promise<void> {
 		if (!this.embedding.isReady() || records.length === 0) return;
 		try {
 			const vectors = await this.embedding.embed(records.map((record) => record.content));
@@ -166,6 +202,9 @@ export class MemoryWriter {
 			}
 		} catch (error) {
 			this.logger?.warn?.(`[pi-men] L1 embedding failed: ${errorMessage(error)}`);
+			// Updated records would keep vectors of their pre-merge content;
+			// drop them so recall never matches stale text (backfill re-embeds).
+			if (staleIdsOnFailure.length > 0) this.store.removeVectors("l1", staleIdsOnFailure);
 		}
 	}
 

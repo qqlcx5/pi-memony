@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { HostLogger } from "../../types.ts";
 import { errorMessage } from "../errors.ts";
@@ -13,6 +13,7 @@ export interface SceneIndexEntry {
 }
 
 const DELETED_MARKER = "[DELETED]";
+const META_HEADER = /-----META-START-----\n([\s\S]*?)\n?-----META-END-----/;
 
 /** Filename policy shared with the L2 prompt: safe chars, `.md` suffix. */
 export function normalizeSceneFileName(name: string): string {
@@ -26,24 +27,69 @@ export function normalizeSceneFileName(name: string): string {
 
 export function readSceneIndex(paths: StoragePaths): SceneIndexEntry[] {
 	try {
-		if (!existsSync(paths.sceneIndexFile)) return [];
-		const parsed = JSON.parse(readFileSync(paths.sceneIndexFile, "utf8")) as unknown;
-		if (!Array.isArray(parsed)) return [];
-		return parsed.filter(
-			(entry): entry is SceneIndexEntry =>
-				typeof entry === "object" &&
-				entry !== null &&
-				typeof (entry as SceneIndexEntry).file === "string" &&
-				typeof (entry as SceneIndexEntry).summary === "string",
-		);
+		if (existsSync(paths.sceneIndexFile)) {
+			const parsed = JSON.parse(readFileSync(paths.sceneIndexFile, "utf8")) as unknown;
+			if (Array.isArray(parsed)) {
+				return parsed.filter(
+					(entry): entry is SceneIndexEntry =>
+						typeof entry === "object" &&
+						entry !== null &&
+						typeof (entry as SceneIndexEntry).file === "string" &&
+						typeof (entry as SceneIndexEntry).summary === "string",
+				);
+			}
+		}
 	} catch {
-		return [];
+		// Corrupt index: fall through to the META-based rebuild.
 	}
+	return rebuildSceneIndex(paths);
 }
 
+/**
+ * Rebuild the index from the META headers inside the scene .md files, so a
+ * lost or corrupt scene_index.json cannot permanently lose summaries/heats.
+ */
+function rebuildSceneIndex(paths: StoragePaths): SceneIndexEntry[] {
+	const entries: SceneIndexEntry[] = [];
+	for (const file of listSceneFiles(paths)) {
+		try {
+			const meta = parseSceneMeta(readFileSync(join(paths.sceneBlocksDir, file), "utf8"));
+			entries.push({
+				file,
+				summary: meta.summary,
+				heat: meta.heat,
+				createdAt: meta.created,
+				updatedAt: meta.updated,
+			});
+		} catch {}
+	}
+	if (entries.length > 0) writeSceneIndex(paths, entries);
+	return entries;
+}
+
+function parseSceneMeta(raw: string): { summary: string; heat: number; created: string; updated: string } {
+	const header = META_HEADER.exec(raw)?.[1] ?? "";
+	const fields = new Map<string, string>();
+	for (const line of header.split("\n")) {
+		const at = line.indexOf(":");
+		if (at <= 0) continue;
+		fields.set(line.slice(0, at).trim(), line.slice(at + 1).trim());
+	}
+	const heat = Number.parseInt(fields.get("heat") ?? "0", 10);
+	return {
+		summary: fields.get("summary") ?? "",
+		heat: Number.isFinite(heat) ? Math.max(0, heat) : 0,
+		created: fields.get("created") ?? "",
+		updated: fields.get("updated") ?? "",
+	};
+}
+
+/** Atomic index write: a crash mid-write cannot corrupt the previous index. */
 export function writeSceneIndex(paths: StoragePaths, entries: readonly SceneIndexEntry[]): void {
 	mkdirSync(paths.sceneBlocksDir, { recursive: true });
-	writeFileSync(paths.sceneIndexFile, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
+	const tmp = join(paths.sceneBlocksDir, "scene_index.json.tmp");
+	writeFileSync(tmp, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
+	renameSync(tmp, paths.sceneIndexFile);
 }
 
 export function readSceneFile(paths: StoragePaths, file: string): string | null {
@@ -127,6 +173,27 @@ export function generateSceneNavigation(entries: readonly SceneIndexEntry[]): st
 		.sort((a, b) => b.heat - a.heat)
 		.map((entry) => `- ${entry.file}${entry.summary ? ` — ${entry.summary}` : ""}`)
 		.join("\n");
+}
+
+/**
+ * Snapshot scene_blocks/ under .backup/scene_blocks/ before an L2 pass
+ * mutates it; keeps the newest `backupCount` snapshots (0 disables).
+ */
+export function backupSceneBlocks(paths: StoragePaths, backupCount: number, logger?: HostLogger): void {
+	if (backupCount <= 0 || !existsSync(paths.sceneBlocksDir)) return;
+	try {
+		const root = join(paths.backupDir, "scene_blocks");
+		mkdirSync(root, { recursive: true });
+		const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+		cpSync(paths.sceneBlocksDir, join(root, stamp), { recursive: true });
+		const backups = readdirSync(root).sort();
+		while (backups.length > backupCount) {
+			const oldest = backups.shift();
+			if (oldest) rmSync(join(root, oldest), { recursive: true, force: true });
+		}
+	} catch (error) {
+		logger?.warn?.(`[pi-men] scene backup failed: ${errorMessage(error)}`);
+	}
 }
 
 /** Scene blocks changed since `sinceIso` (by updatedAt), newest last. */

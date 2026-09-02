@@ -22,6 +22,8 @@ export interface PersonaConfigInput {
 	triggerEveryN?: number;
 	maxScenes?: number;
 	backupCount?: number;
+	/** Scene-block snapshots kept under .backup/scene_blocks/ before each L2 pass. */
+	sceneBackupCount?: number;
 }
 
 export interface PipelineConfigInput {
@@ -71,7 +73,7 @@ export interface PiMenConfig {
 	promptMode: PromptMode;
 	capture: { enabled: boolean; l0RetentionDays: number };
 	extraction: { enabled: boolean; enableDedup: boolean; maxMemoriesPerSession: number };
-	persona: { triggerEveryN: number; maxScenes: number; backupCount: number };
+	persona: { triggerEveryN: number; maxScenes: number; backupCount: number; sceneBackupCount: number };
 	pipeline: {
 		everyNConversations: number;
 		enableWarmup: boolean;
@@ -139,6 +141,7 @@ export function parsePiMenConfig(input?: PiMenConfigInput): PiMenConfig {
 			triggerEveryN: int(i.persona?.triggerEveryN, 50, 1, 100000),
 			maxScenes: int(i.persona?.maxScenes, 15, 2, 100),
 			backupCount: int(i.persona?.backupCount, 3, 0, 100),
+			sceneBackupCount: int(i.persona?.sceneBackupCount, 10, 0, 100),
 		},
 		pipeline: {
 			everyNConversations: int(i.pipeline?.everyNConversations, 5, 1, 1000),

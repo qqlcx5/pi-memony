@@ -169,6 +169,7 @@ export class SqliteMemoryStore {
 			content: string;
 			type: MemoryType;
 			priority: number;
+			sceneName: string;
 			timestamps: string[];
 			version: number;
 			updatedAt: string;
@@ -178,12 +179,13 @@ export class SqliteMemoryStore {
 		this.transaction(() => {
 			const result = this.prepare(
 				`UPDATE l1_records
-				 SET content = ?, type = ?, priority = ?, timestamps_json = ?, version = ?, updated_time = ?
+				 SET content = ?, type = ?, priority = ?, scene_name = ?, timestamps_json = ?, version = ?, updated_time = ?
 				 WHERE record_id = ?`,
 			).run(
 				fields.content,
 				fields.type,
 				fields.priority,
+				fields.sceneName,
 				JSON.stringify(fields.timestamps),
 				fields.version,
 				fields.updatedAt,
@@ -202,10 +204,9 @@ export class SqliteMemoryStore {
 			for (const id of ids) {
 				this.prepare("DELETE FROM l1_records WHERE record_id = ?").run(id);
 				this.prepare("DELETE FROM l1_fts WHERE record_id = ?").run(id);
-				this.prepare("DELETE FROM l1_vec WHERE record_id = ?").run(id);
 			}
 		});
-		this.l1Vectors.remove(ids);
+		this.removeVectors("l1", ids);
 	}
 
 	getMemories(ids: readonly string[]): MemoryRecord[] {
@@ -221,11 +222,28 @@ export class SqliteMemoryStore {
 		return rows.map(rowToMemory);
 	}
 
-	memoriesUpdatedSince(iso: string, limit: number): MemoryRecord[] {
+	/**
+	 * Records updated after the (updated_time, id) cursor, oldest first. The
+	 * id tiebreaker keeps LIMIT pagination exact across equal timestamps (the
+	 * writer stamps one `now` across a whole decision batch).
+	 */
+	memoriesUpdatedSince(cursor: { updatedAt: string; id: string | null }, limit: number): MemoryRecord[] {
 		const rows = this.prepare(
-			"SELECT * FROM l1_records WHERE updated_time > ? ORDER BY updated_time ASC LIMIT ?",
-		).all(iso, limit) as unknown as L1Row[];
+			`SELECT * FROM l1_records
+			 WHERE updated_time > ? OR (updated_time = ? AND record_id > ?)
+			 ORDER BY updated_time ASC, record_id ASC LIMIT ?`,
+		).all(cursor.updatedAt, cursor.updatedAt, cursor.id ?? "", limit) as unknown as L1Row[];
 		return rows.map(rowToMemory);
+	}
+
+	hasMemoriesUpdatedSince(cursor: { updatedAt: string; id: string | null }): boolean {
+		return (
+			this.prepare(
+				`SELECT 1 FROM l1_records
+				 WHERE updated_time > ? OR (updated_time = ? AND record_id > ?)
+				 LIMIT 1`,
+			).get(cursor.updatedAt, cursor.updatedAt, cursor.id ?? "") !== undefined
+		);
 	}
 
 	countMemories(): number {
@@ -255,13 +273,16 @@ export class SqliteMemoryStore {
 
 	// ── L0 conversations ────────────────────────────────────────────────────
 
-	insertConversations(records: readonly L0Record[], embeddings?: readonly (Float32Array | undefined)[]): void {
+	insertConversations(records: readonly L0Record[], embeddings?: readonly (Float32Array | undefined)[]): string[] {
+		const inserted: string[] = [];
 		this.transaction(() => {
 			for (let i = 0; i < records.length; i++) {
 				const record = records[i]!;
-				this.prepare(
+				const result = this.prepare(
 					"INSERT OR IGNORE INTO l0_conversations (record_id, session_key, role, message_text, timestamp) VALUES (?, ?, ?, ?, ?)",
 				).run(record.id, record.sessionKey, record.role, record.content, record.timestamp);
+				if (result.changes === 0) continue;
+				inserted.push(record.id);
 				this.prepare("INSERT OR IGNORE INTO l0_fts (record_id, message_text) VALUES (?, ?)").run(
 					record.id,
 					record.content,
@@ -270,6 +291,7 @@ export class SqliteMemoryStore {
 				if (embedding) this.putVector("l0", record.id, embedding);
 			}
 		});
+		return inserted;
 	}
 
 	searchConversationsKeyword(matchQuery: string | null, limit: number, sessionKey?: string): L0KeywordSearchHit[] {
@@ -290,9 +312,16 @@ export class SqliteMemoryStore {
 	}
 
 	/** Substring fallback for conversations, mirroring searchMemoriesLike. */
-	searchConversationsLike(rawQuery: string, limit: number): L0KeywordSearchHit[] {
+	searchConversationsLike(rawQuery: string, limit: number, sessionKey?: string): L0KeywordSearchHit[] {
 		const needle = `%${escapeLike(rawQuery.trim())}%`;
 		if (needle === "%%") return [];
+		if (sessionKey) {
+			const rows = this.prepare(
+				`SELECT record_id, session_key FROM l0_conversations
+				 WHERE message_text LIKE ? ESCAPE '\\' AND session_key = ? ORDER BY timestamp DESC LIMIT ?`,
+			).all(needle, sessionKey, limit) as { record_id: string; session_key: string }[];
+			return rows.map((row) => ({ id: row.record_id, relevance: 0.5, sessionKey: row.session_key }));
+		}
 		const rows = this.prepare(
 			`SELECT record_id, session_key FROM l0_conversations
 			 WHERE message_text LIKE ? ESCAPE '\\' ORDER BY timestamp DESC LIMIT ?`,
@@ -309,11 +338,17 @@ export class SqliteMemoryStore {
 		return (statement.all(...ids) as unknown as L0Row[]).map(rowToL0);
 	}
 
-	conversationsSince(timestamp: number, limit: number): L0Record[] {
+	/**
+	 * Records inserted after the (timestamp, id) cursor, oldest first. The id
+	 * tiebreaker makes pagination exact even when several rows share one
+	 * millisecond, so a LIMIT boundary can never silently skip them.
+	 */
+	conversationsSince(cursor: { timestamp: number; id: string | null }, limit: number): L0Record[] {
 		const rows = this.prepare(
 			`SELECT record_id, session_key, role, message_text, timestamp FROM l0_conversations
-			 WHERE timestamp > ? ORDER BY timestamp ASC LIMIT ?`,
-		).all(timestamp, limit) as unknown as L0Row[];
+			 WHERE timestamp > ? OR (timestamp = ? AND record_id > ?)
+			 ORDER BY timestamp ASC, record_id ASC LIMIT ?`,
+		).all(cursor.timestamp, cursor.timestamp, cursor.id ?? "", limit) as unknown as L0Row[];
 		return rows.map(rowToL0);
 	}
 
@@ -339,10 +374,12 @@ export class SqliteMemoryStore {
 			for (const { record_id } of ids) {
 				this.prepare("DELETE FROM l0_conversations WHERE record_id = ?").run(record_id);
 				this.prepare("DELETE FROM l0_fts WHERE record_id = ?").run(record_id);
-				this.prepare("DELETE FROM l0_vec WHERE record_id = ?").run(record_id);
 			}
 		});
-		this.l0Vectors.remove(ids.map((row) => row.record_id));
+		this.removeVectors(
+			"l0",
+			ids.map((row) => row.record_id),
+		);
 		return ids.length;
 	}
 
@@ -419,6 +456,17 @@ export class SqliteMemoryStore {
 
 	hasVector(table: VectorTable, id: string): boolean {
 		return this.prepare(`SELECT 1 FROM ${table}_vec WHERE record_id = ?`).get(id) !== undefined;
+	}
+
+	/** Drop vectors whose owning content changed but re-embedding failed, so recall never matches stale text. */
+	removeVectors(table: VectorTable, ids: readonly string[]): void {
+		if (ids.length === 0) return;
+		this.transaction(() => {
+			for (const id of ids) {
+				this.prepare(`DELETE FROM ${table}_vec WHERE record_id = ?`).run(id);
+			}
+		});
+		this.vectorIndex(table).remove(ids);
 	}
 }
 

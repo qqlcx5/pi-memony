@@ -42,7 +42,12 @@ export function buildRecallResult(params: {
 	const sceneNavigation = sceneEntries.length > 0 ? generateSceneNavigation(sceneEntries) : "";
 
 	const stableParts: string[] = [];
-	if (personaContent) stableParts.push(`<user-persona>\n${personaContent}\n</user-persona>`);
+	if (personaContent) {
+		// Conversation-derived persona text could carry a literal closing tag and
+		// break out of the injection block; neutralize any occurrence.
+		const escaped = personaContent.replaceAll("</user-persona>", "<\\/user-persona>");
+		stableParts.push(`<user-persona>\n${escaped}\n</user-persona>`);
+	}
 	if (sceneNavigation) stableParts.push(`<scene-navigation>\n${sceneNavigation}\n</scene-navigation>`);
 
 	let prependContext: string | undefined;
@@ -61,11 +66,14 @@ export function buildRecallResult(params: {
 	};
 }
 
+const TRUNCATION_NOTICE = "…（已截断；可用 memory_search 查看详情）";
+
 function formatMemoryLine(hit: RecallHit, config: PiMenConfig): string {
 	let content = hit.content;
 	const maxChars = config.recall.maxCharsPerMemory;
 	if (maxChars > 0 && content.length > maxChars) {
-		content = `${content.slice(0, Math.max(0, maxChars - 1))}…`;
+		// Cut on code points, not UTF-16 units, so surrogate pairs survive.
+		content = `${[...content].slice(0, Math.max(0, maxChars - 1)).join("")}${TRUNCATION_NOTICE}`;
 	}
 	const prefix = `- [${hit.type}]`;
 	return `${prefix} ${content}`;

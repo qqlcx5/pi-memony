@@ -1,11 +1,14 @@
 {
-	"name": "pi-men",
+	"name": "@ai-agentx/pi-men",
 	"version": "0.84.4",
 	"description": "pi-men: a coding agent with built-in four-layer memory (conversations, atomic memories, scenes, persona), built on the pi base",
 	"type": "module",
 	"main": "./dist/cli.js",
 	"bin": {
 		"pi-men": "./dist/cli.js"
+	},
+	"publishConfig": {
+		"access": "public"
 	},
 	"files": [
 		"dist",
@@ -35,7 +38,8 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/pi-coding-agent": "^0.84.4"
+		"@earendil-works/pi-coding-agent": "^0.84.4",
+		"undici": "8.9.0"
 	},
 	"devDependencies": {
 		"@types/node": "22.19.19"

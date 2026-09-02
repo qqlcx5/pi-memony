@@ -51,6 +51,9 @@ function toConversationMessages(messages: readonly AgentMessage[]): Conversation
 				timestamp: message.timestamp,
 			});
 		} else if (message.role === "assistant") {
+			// Failed/aborted turns must not pollute L0 (reference: skip on agent
+			// failure); their partial text is not a real answer.
+			if (message.stopReason === "error" || message.stopReason === "aborted") continue;
 			const text = assistantText(message);
 			if (text) {
 				result.push({ id: "", role: "assistant", content: text, timestamp: message.timestamp });
@@ -124,18 +127,19 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 	let initialized = false;
 	let pendingRecall: RecallResult | undefined;
 
+	// The event bus throws once the extension runtime is stale (quit/reload);
+	// logging must never break the memory pipeline, so swallow emit errors.
+	const safeEmit = (channel: string, data: unknown) => {
+		try {
+			pi.events.emit(channel, data);
+		} catch {
+			// runtime torn down
+		}
+	};
+
 	const getMemory = (ctx: ExtensionContext): PiMen => {
 		if (!memory) {
 			const config = loadPiMenConfigFile(join(getAgentDir(), MEMORY_CONFIG_FILE));
-			// The event bus throws once the extension runtime is stale (quit/reload);
-			// logging must never break the memory pipeline, so swallow emit errors.
-			const safeEmit = (channel: string, data: unknown) => {
-				try {
-					pi.events.emit(channel, data);
-				} catch {
-					// runtime torn down
-				}
-			};
 			memory = new PiMen({
 				config,
 				runner: buildRunner(ctx),
@@ -154,7 +158,14 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 		const client = getMemory(ctx);
 		if (initialized) return;
 		initialized = true;
-		await client.initialize();
+		try {
+			await client.initialize();
+		} catch (error) {
+			// Never surface an init failure as an unhandled rejection (it would
+			// kill the session); retry on the next trigger instead.
+			initialized = false;
+			safeEmit("pi-men:warn", { message: `memory initialize failed: ${errorMessage(error)}` });
+		}
 	};
 
 	pi.on("session_start", (event, ctx) => {

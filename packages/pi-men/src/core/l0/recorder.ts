@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { CompletedTurn, HostLogger } from "../../types.ts";
 import { errorMessage } from "../errors.ts";
@@ -43,8 +43,19 @@ export class ConversationRecorder {
 				timestamp: message.timestamp || Date.now(),
 			}));
 		if (records.length === 0) return;
-		this.store.insertConversations(records);
-		this.appendJsonl(records);
+		// The store dedupes replays; only rows actually inserted belong in the
+		// append-only JSONL audit trail (also collapse duplicate ids within one
+		// turn, e.g. same role/content/ms messages hashing identically).
+		const inserted = new Set(this.store.insertConversations(records));
+		const fresh: L0Record[] = [];
+		const seen = new Set<string>();
+		for (const record of records) {
+			if (!inserted.has(record.id) || seen.has(record.id)) continue;
+			seen.add(record.id);
+			fresh.push(record);
+		}
+		if (fresh.length === 0) return;
+		this.appendJsonl(fresh);
 	}
 
 	private appendJsonl(records: L0Record[]): void {
@@ -70,17 +81,37 @@ export class ConversationRecorder {
 		const matchQuery = buildFtsQuery(query);
 		const hits = matchQuery
 			? this.store.searchConversationsKeyword(matchQuery, limit, sessionKey)
-			: this.store.searchConversationsLike(query, limit);
-		return this.store.getConversations(hits.map((hit) => hit.id));
+			: this.store.searchConversationsLike(query, limit, sessionKey);
+		if (hits.length === 0) return [];
+		// getConversations' IN-list has no defined order; restore the ranking.
+		const byId = new Map(this.store.getConversations(hits.map((hit) => hit.id)).map((row) => [row.id, row]));
+		return hits.map((hit) => byId.get(hit.id)).filter((row): row is L0Record => row !== undefined);
 	}
 
 	count(): number {
 		return this.store.countConversations();
 	}
 
+	/** Drop L0 rows (and whole expired JSONL day files) older than the retention window. */
 	cleanup(retentionDays: number): number {
 		if (retentionDays <= 0) return 0;
 		const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-		return this.store.deleteConversationsBefore(cutoff);
+		const deleted = this.store.deleteConversationsBefore(cutoff);
+		this.pruneJsonl(cutoff);
+		return deleted;
+	}
+
+	/** Remove JSONL day files wholly older than the cutoff; partial days stay. */
+	private pruneJsonl(cutoff: number): void {
+		try {
+			if (!existsSync(this.paths.conversationsDir)) return;
+			const cutoffDay = new Date(cutoff).toISOString().slice(0, 10);
+			for (const name of readdirSync(this.paths.conversationsDir)) {
+				if (!name.endsWith(".jsonl")) continue;
+				if (name.slice(0, 10) < cutoffDay) rmSync(join(this.paths.conversationsDir, name));
+			}
+		} catch (error) {
+			this.logger?.warn?.(`[pi-men] L0 jsonl prune failed: ${errorMessage(error)}`);
+		}
 	}
 }
