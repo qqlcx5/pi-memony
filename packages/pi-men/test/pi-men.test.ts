@@ -1,5 +1,5 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { PiMenConfigInput } from "../src/config.ts";
@@ -38,6 +38,17 @@ describe("parsePiMenConfig", () => {
 	it("keeps a valid explicit dataDir", () => {
 		const config = parsePiMenConfig({ dataDir: "/tmp/pi-men-x" });
 		expect(config.dataDir).toBe("/tmp/pi-men-x");
+	});
+
+	it("defaults the data dir to the agent dir from PI_CODING_AGENT_DIR", () => {
+		process.env.PI_CODING_AGENT_DIR = "/tmp/pi-men-agentdir";
+		try {
+			expect(parsePiMenConfig().dataDir).toBe("/tmp/pi-men-agentdir/memory");
+			process.env.PI_CODING_AGENT_DIR = "";
+			expect(parsePiMenConfig().dataDir).toBe(join(homedir(), ".pi", "agent", "memory"));
+		} finally {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
 	});
 
 	it("reads JSON config files, ignoring missing or invalid ones", () => {

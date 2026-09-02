@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type { MemoryMetadata, MemoryRecord, MemoryType } from "../../types.ts";
 import type { VectorSearchHit } from "./vector-index.ts";
@@ -95,6 +97,8 @@ export class SqliteMemoryStore {
 	private l0VectorsLoaded = false;
 
 	constructor(dbPath: string) {
+		// The store owns its path: first run has no memory/ directory yet.
+		mkdirSync(dirname(dbPath), { recursive: true });
 		this.db = new DatabaseSync(dbPath);
 		this.statements = new Map();
 		this.l1Vectors = new VectorIndex();

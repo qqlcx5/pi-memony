@@ -100,8 +100,10 @@ export interface PiMenConfig {
 	};
 }
 
-/** Default storage root: ~/.pi/agent/memory */
+/** Default storage root: <agentDir>/memory, where agentDir is $PI_CODING_AGENT_DIR or ~/.pi/agent. */
 export function defaultDataDir(): string {
+	const agentDir = process.env.PI_CODING_AGENT_DIR?.trim();
+	if (agentDir) return join(agentDir, "memory");
 	return join(homedir(), ".pi", "agent", "memory");
 }
 
