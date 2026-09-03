@@ -1,25 +1,25 @@
-# pi-men
+# anta-agent
 
 A coding agent with built-in four-layer memory, built on the [pi](https://github.com/earendil-works/pi) base.
 
-`pi-men` works exactly like `pi` — same interaction, same commands, same modes — plus a memory engine that captures your conversations and work, distills them into reusable memory, and re-injects the relevant parts into future sessions. The more you use it, the less you have to re-explain yourself.
+`anta-agent` works exactly like `pi` — same interaction, same commands, same modes — plus a memory engine that captures your conversations and work, distills them into reusable memory, and re-injects the relevant parts into future sessions. The more you use it, the less you have to re-explain yourself.
 
 ## Quick start
 
 ```bash
-npm install -g @ai-agentx/pi-men
-pi-men              # first run asks you to configure a model/API key, like pi
+npm install -g @ai-agentx/anta-agent
+at                 # first run asks you to configure a model/API key, like pi
 ```
 
-All data lives in `~/.pi-men` (independent of any existing pi installation).
+All data lives in `~/.anta-agent` (independent of any existing pi installation). If you used the earlier `pi-men` preview, copy `~/.pi-men` to `~/.anta-agent` to keep your memory.
 
 ## What you get
 
 ### A full coding agent
 
-pi-men inherits the complete pi base: multi-provider models (Anthropic, OpenAI, Google, Bedrock, and more, plus a built-in llama.cpp provider for local models), the standard tool set (read, bash, edit, write, grep, find, ls), interactive TUI with session tree and compaction, print/RPC/JSON modes for scripting, an extension API, skills, prompt templates, and themes.
+anta-agent inherits the complete pi base: multi-provider models (Anthropic, OpenAI, Google, Bedrock, and more, plus a built-in llama.cpp provider for local models), the standard tool set (read, bash, edit, write, grep, find, ls), interactive TUI with session tree and compaction, print/RPC/JSON modes for scripting, an extension API, skills, prompt templates, and themes.
 
-### Four-layer memory (the pi-men part)
+### Four-layer memory (the anta-agent part)
 
 | Layer | What it stores | Where |
 |---|---|---|
@@ -34,7 +34,7 @@ pi-men inherits the complete pi base: multi-provider models (Anthropic, OpenAI, 
 
 **You can always dig deeper** with two built-in tools the agent can call: `memory_search` (structured memories) and `conversation_search` (raw past conversations). Or save something explicitly with `/remember <text>`; `/memory` shows store status.
 
-**It is optional.** Disable memory with one setting and pi-men behaves as a plain agent; the store stays on disk untouched.
+**It is optional.** Disable memory with one setting and anta-agent behaves as a plain agent; the store stays on disk untouched.
 
 ## Commands and tools
 
@@ -48,7 +48,7 @@ pi-men inherits the complete pi base: multi-provider models (Anthropic, OpenAI, 
 ## Storage
 
 ```
-~/.pi-men/
+~/.anta-agent/
   auth.json          provider credentials
   settings.json      settings (pi format)
   sessions/          session transcripts
@@ -64,13 +64,13 @@ pi-men inherits the complete pi base: multi-provider models (Anthropic, OpenAI, 
 
 ## Configuration
 
-Disable memory in `~/.pi-men/settings.json`:
+Disable memory in `~/.anta-agent/settings.json`:
 
 ```json
 { "memory": { "enabled": false } }
 ```
 
-Tune the engine in `~/.pi-men/memory.json` (all keys optional; defaults shown):
+Tune the engine in `~/.anta-agent/memory.json` (all keys optional; defaults shown):
 
 ```json
 {

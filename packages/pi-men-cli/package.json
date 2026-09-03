@@ -1,11 +1,11 @@
 {
-	"name": "@ai-agentx/pi-men",
+	"name": "anta-agent",
 	"version": "0.84.4",
-	"description": "pi-men: a coding agent with built-in four-layer memory (conversations, atomic memories, scenes, persona), built on the pi base",
+	"description": "anta-agent: a coding agent with built-in four-layer memory (conversations, atomic memories, scenes, persona), built on the pi base",
 	"type": "module",
 	"main": "./dist/cli.js",
 	"bin": {
-		"pi-men": "./dist/cli.js"
+		"at": "./dist/cli.js"
 	},
 	"publishConfig": {
 		"access": "public"
