@@ -82,7 +82,6 @@ Tune the engine in `~/.anta-agent/memory.json` (all keys optional; defaults show
   "embedding": {
     "provider": "none",
     "baseUrl": "https://api.openai.com/v1",
-    "apiKey": "sk-...",
     "model": "text-embedding-3-small",
     "dimensions": 1536
   }
@@ -90,12 +89,18 @@ Tune the engine in `~/.anta-agent/memory.json` (all keys optional; defaults show
 ```
 
 - `promptMode`: `"code"` extracts work memories (facts / tasks / methods / artifacts); `"chat"` extracts personal memories (persona / episodic / instructions).
-- `embedding.provider`: `"none"` keeps recall keyword-only with zero network calls; `"openai"` enables semantic recall against any OpenAI-compatible `/embeddings` endpoint.
+- `embedding.provider`: `"none"` keeps recall keyword-only with zero embedding network calls; `"openai"` enables semantic recall against any OpenAI-compatible `/embeddings` endpoint. If embedding setup or a response fails, keyword recall remains available.
+- Prefer supplying embedding credentials through the provider environment or an external secret store rather than saving an API key in `memory.json`. Keep `~/.anta-agent` readable only by the current user.
 
 ## Notes
 
-- Memory distillation uses your configured model and consumes tokens in the background. If you want the agent without the cost, set `memory.enabled: false` or `extraction.enabled: false`.
-- Memory data never leaves your machine; the only network calls are to your model/embedding providers.
+- Memory distillation uses your configured model and consumes tokens in the background. Extraction, deduplication, scene consolidation, persona generation, and recall may send relevant conversation or memory text to that configured model provider. Local SQLite, JSONL, scene, and persona files are not sent to any additional service by anta-agent.
+- With `embedding.provider: "openai"`, embedding text is also sent to the configured embedding endpoint. With `"none"`, no embedding request is made.
+- L0 conversations are appended to daily JSONL recovery logs and projected into SQLite/FTS for search. Startup replays valid JSONL rows so a damaged or rebuilt SQLite projection can recover.
+- Session identity uses Pi's stable session ID for request association and the session file path only as the local transcript key. Working directory is metadata, not a cross-session identity.
+- Shutdown stops new memory work and waits for pending capture/pipeline operations before closing SQLite. If a provider ignores cancellation, close is deferred rather than closing the database underneath an active operation.
+- Memory content is treated as untrusted reference data. Known memory wrapper tags, control characters, invalid surrogate code units, unsafe scene paths, and oversized fields are sanitized or rejected before persistence/injection.
+- anta-agent is a local single-process memory integration. TencentDB-Agent-Memory's remote Proxy, Knowledge service, multi-tenant ACL, and distributed worker features are not part of this package; a future remote backend should connect through the host-neutral facade rather than changing the local storage contract.
 
 ## License
 
