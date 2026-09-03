@@ -1,0 +1,53 @@
+{
+	"name": "anta-agent",
+	"version": "0.84.4",
+	"description": "anta-agent: a coding agent with built-in four-layer memory (conversations, atomic memories, scenes, persona), built on the pi base",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"at": "./dist/cli.js"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"CHANGELOG.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"clean": "node -e \"import('node:fs/promises').then(fs=>fs.rm('dist',{recursive:true,force:true}))\"",
+		"build": "tsgo -p tsconfig.build.json && shx chmod +x dist/cli.js",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"keywords": [
+		"coding-agent",
+		"agent",
+		"memory",
+		"cli"
+	],
+	"author": "Earendil Works",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/earendil-works/pi.git",
+		"directory": "packages/anta-agent"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"dependencies": {
+		"@earendil-works/pi-agent-core": "^0.84.4",
+		"@earendil-works/pi-ai": "^0.84.4",
+		"@earendil-works/pi-coding-agent": "^0.84.4",
+		"typebox": "1.3.7",
+		"undici": "8.9.0"
+	},
+	"devDependencies": {
+		"@types/node": "22.19.19",
+		"vitest": "4.1.9"
+	}
+}

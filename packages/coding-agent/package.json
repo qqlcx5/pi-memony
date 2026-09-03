@@ -45,7 +45,6 @@
 	},
 	"dependencies": {
 		"@earendil-works/pi-agent-core": "^0.84.4",
-		"@earendil-works/pi-men": "^0.84.4",
 		"@earendil-works/pi-ai": "^0.84.4",
 		"@earendil-works/pi-client": "^0.84.4",
 		"@earendil-works/pi-protocol": "^0.84.4",
