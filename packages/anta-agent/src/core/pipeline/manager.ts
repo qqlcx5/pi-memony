@@ -82,6 +82,8 @@ export class PipelineManager {
 	private running = false;
 	private destroyed = false;
 	private inFlight: Promise<void> | null = null;
+	private readonly abortController = new AbortController();
+	private destroyPromise: Promise<boolean> | null = null;
 
 	constructor(deps: {
 		config: AntaAgentConfig;
@@ -243,6 +245,7 @@ export class PipelineManager {
 					timestamp: message.timestamp,
 				})),
 				previousSceneName: this.checkpoint.previousSceneName ?? undefined,
+				signal: this.abortController.signal,
 			});
 
 			const candidates = scenes.flatMap((scene) => scene.memories);
@@ -258,6 +261,7 @@ export class PipelineManager {
 						runner: this.runner,
 						config: this.config,
 						matches,
+						signal: this.abortController.signal,
 						logger: this.logger,
 					});
 				}
@@ -265,6 +269,11 @@ export class PipelineManager {
 				const result = await this.writer.applyDecisions(decisions, candidateMap, {
 					sessionKey: chunk[chunk.length - 1]!.sessionKey,
 				});
+				if (!result.primaryWritesComplete) {
+					throw new Error(
+						`L1 primary writes incomplete (${result.failedCandidateIds.length} failed, ${result.auditFailures} audit failures)`,
+					);
+				}
 				this.checkpoint.unprocessedMemoriesSinceL3 += result.stored.length + result.updated.length;
 			}
 
@@ -353,6 +362,7 @@ export class PipelineManager {
 					memories,
 					existingIndex,
 					logger: this.logger,
+					signal: this.abortController.signal,
 				});
 				const last = memories[memories.length - 1]!;
 				cursor.updatedAt = last.updatedAt;
@@ -407,6 +417,7 @@ export class PipelineManager {
 				changedScenes: changed,
 				paths: this.paths,
 				totalMemories: this.store.countMemories(),
+				signal: this.abortController.signal,
 			});
 			if (result.content) writePersona(this.paths, result.content, this.config.persona.backupCount);
 			this.checkpoint.lastL3At = new Date().toISOString();
@@ -419,8 +430,20 @@ export class PipelineManager {
 	}
 
 	/** Stop timers and wait (bounded) for in-flight work. */
-	async destroy(timeoutMs = 3000): Promise<void> {
+	async destroy(timeoutMs = 3000): Promise<boolean> {
+		if (this.destroyPromise) return this.destroyPromise;
+		this.destroyPromise = this.destroyInner(timeoutMs);
+		return this.destroyPromise;
+	}
+
+	/** Resolve once no pipeline pass can access the store anymore. */
+	async waitForQuiescence(): Promise<void> {
+		if (this.inFlight) await this.inFlight;
+	}
+
+	private async destroyInner(timeoutMs: number): Promise<boolean> {
 		this.destroyed = true;
+		this.abortController.abort();
 		if (this.idleTimer) {
 			clearTimeout(this.idleTimer);
 			this.idleTimer = null;
@@ -429,10 +452,24 @@ export class PipelineManager {
 			clearTimeout(this.l2Timer);
 			this.l2Timer = null;
 		}
+		let quiescent = true;
 		if (this.inFlight) {
-			await Promise.race([this.inFlight, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+			let timedOut = false;
+			await Promise.race([
+				this.inFlight,
+				new Promise<void>((resolve) => {
+					const timer = setTimeout(() => {
+						timedOut = true;
+						resolve();
+					}, timeoutMs);
+					timer.unref?.();
+				}),
+			]);
+			quiescent = !timedOut;
+			if (timedOut) this.logger?.warn?.("[anta-agent] pipeline shutdown timed out; store remains open");
 		}
 		this.saveCheckpoint();
+		return quiescent;
 	}
 
 	sceneCount(): number {

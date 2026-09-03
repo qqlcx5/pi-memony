@@ -54,6 +54,7 @@ export type {
 	LlmRunParams,
 	MemoryMetadata,
 	MemoryRecord,
+	MemoryScope,
 	MemoryStats,
 	MemoryType,
 	RecallHit,

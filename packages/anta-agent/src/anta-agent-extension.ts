@@ -5,13 +5,14 @@ import { completeSimple, contentText } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { isValidMemoryType } from "./core/parse.ts";
+import { getPiSessionIdentity } from "./host-adapter.ts";
 import {
 	AntaAgent,
 	type CompletedTurn,
 	type ConversationMessage,
 	type LlmRunner,
 	loadAntaAgentConfigFile,
-	type MemoryType,
 	type RecallResult,
 } from "./index.ts";
 
@@ -113,12 +114,12 @@ function buildRunner(ctx: ExtensionContext): LlmRunner {
 	};
 }
 
+function sessionIdentity(ctx: ExtensionContext) {
+	return getPiSessionIdentity(ctx);
+}
+
 function sessionKey(ctx: ExtensionContext): string {
-	try {
-		return ctx.sessionManager.getSessionFile() ?? ctx.cwd;
-	} catch {
-		return ctx.cwd;
-	}
+	return sessionIdentity(ctx).sessionKey;
 }
 
 const factory: ExtensionFactory = (pi: ExtensionAPI) => {
@@ -126,7 +127,10 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 
 	let memory: AntaAgent | null = null;
 	let initialized = false;
-	let pendingRecall: RecallResult | undefined;
+	let initializePromise: Promise<void> | null = null;
+	let shuttingDown = false;
+	const pendingRecalls = new Map<string, Array<Promise<RecallResult | undefined>>>();
+	const pendingCaptures = new Set<Promise<void>>();
 
 	// The event bus throws once the extension runtime is stale (quit/reload);
 	// logging must never break the memory pipeline, so swallow emit errors.
@@ -156,39 +160,109 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 	};
 
 	const ensureInitialized = async (ctx: ExtensionContext): Promise<void> => {
+		if (shuttingDown || initialized) return;
+		if (initializePromise) return initializePromise;
 		const client = getMemory(ctx);
-		if (initialized) return;
-		initialized = true;
+		initializePromise = client
+			.initialize()
+			.then(() => {
+				initialized = true;
+			})
+			.catch((error) => {
+				// Never surface an init failure as an unhandled rejection (it would
+				// kill the session); clear the gate so the next trigger can retry.
+				safeEmit("anta-agent:warn", { message: `memory initialize failed: ${errorMessage(error)}` });
+				throw error;
+			});
 		try {
-			await client.initialize();
-		} catch (error) {
-			// Never surface an init failure as an unhandled rejection (it would
-			// kill the session); retry on the next trigger instead.
-			initialized = false;
-			safeEmit("anta-agent:warn", { message: `memory initialize failed: ${errorMessage(error)}` });
+			await initializePromise;
+		} catch {
+			// Initialization failures are deliberately fail-soft for the host.
+		} finally {
+			initializePromise = null;
 		}
 	};
 
+	const enqueueRecall = (sessionId: string, task: Promise<RecallResult | undefined>): void => {
+		const queue = pendingRecalls.get(sessionId) ?? [];
+		queue.push(task);
+		pendingRecalls.set(sessionId, queue);
+	};
+
+	const takeRecall = (sessionId: string): Promise<RecallResult | undefined> | undefined => {
+		const queue = pendingRecalls.get(sessionId);
+		if (!queue || queue.length === 0) return undefined;
+		const task = queue.shift();
+		if (queue.length === 0) pendingRecalls.delete(sessionId);
+		return task;
+	};
+
+	const trackCapture = (task: Promise<void>): void => {
+		pendingCaptures.add(task);
+		void task.then(
+			() => pendingCaptures.delete(task),
+			() => pendingCaptures.delete(task),
+		);
+	};
+
+	const waitForPending = async (
+		tasks: readonly Promise<void>[],
+		timeoutMs: number,
+		label: string,
+	): Promise<boolean> => {
+		if (tasks.length === 0) return true;
+		let timedOut = false;
+		await Promise.race([
+			Promise.allSettled(tasks),
+			new Promise<void>((resolve) => {
+				const timer = setTimeout(() => {
+					timedOut = true;
+					resolve();
+				}, timeoutMs);
+				timer.unref?.();
+			}),
+		]);
+		if (timedOut) {
+			safeEmit("anta-agent:warn", { message: `${label} shutdown wait timed out (${tasks.length} pending)` });
+			return false;
+		}
+		return true;
+	};
+
 	pi.on("session_start", (event, ctx) => {
-		if (event.reason !== "startup" && event.reason !== "resume") return;
-		void ensureInitialized(ctx);
+		shuttingDown = false;
+		if (
+			event.reason === "startup" ||
+			event.reason === "reload" ||
+			event.reason === "new" ||
+			event.reason === "resume" ||
+			event.reason === "fork"
+		) {
+			void ensureInitialized(ctx);
+		}
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		pendingRecall = undefined;
+		if (shuttingDown) return undefined;
+		const identity = sessionIdentity(ctx);
 		const client = getMemory(ctx);
-		await ensureInitialized(ctx);
-		const recall = await client.recall(event.prompt);
+		const recallTask = (async () => {
+			await ensureInitialized(ctx);
+			return client.recall(event.prompt);
+		})();
+		enqueueRecall(identity.sessionId, recallTask);
+		const recall = await recallTask;
 		if (!recall) return undefined;
-		pendingRecall = recall;
 		if (recall.appendSystemContext) {
 			return { systemPrompt: `${event.systemPrompt}\n\n${recall.appendSystemContext}` };
 		}
 		return undefined;
 	});
 
-	pi.on("context", (event) => {
-		const recall = pendingRecall;
+	pi.on("context", async (event, ctx) => {
+		const recallTask = takeRecall(sessionIdentity(ctx).sessionId);
+		if (!recallTask) return undefined;
+		const recall = await recallTask;
 		if (!recall?.prependContext) return undefined;
 		const messages = [...event.messages];
 		for (let i = messages.length - 1; i >= 0; i--) {
@@ -202,27 +276,50 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 	});
 
 	pi.on("agent_end", (event, ctx) => {
+		if (shuttingDown) return;
+		const identity = sessionIdentity(ctx);
 		const client = getMemory(ctx);
 		const turn: CompletedTurn = {
-			sessionKey: sessionKey(ctx),
-			cwd: ctx.cwd,
+			sessionId: identity.sessionId,
+			sessionKey: identity.sessionKey,
+			cwd: identity.cwd,
 			messages: toConversationMessages(event.messages),
 		};
-		void client.capture(turn);
+		trackCapture(client.capture(turn));
 	});
 
-	pi.on("agent_settled", () => {
-		pendingRecall = undefined;
+	pi.on("agent_settled", (_event, ctx) => {
+		pendingRecalls.delete(sessionIdentity(ctx).sessionId);
 	});
 
-	pi.on("session_shutdown", async (event) => {
-		if (event.reason !== "quit" && event.reason !== "reload") return;
-		pendingRecall = undefined;
-		initialized = false;
+	pi.on("session_shutdown", async (_event, ctx) => {
+		shuttingDown = true;
+		pendingRecalls.delete(sessionIdentity(ctx).sessionId);
+		const pending = [...pendingCaptures];
+		const capturesSettled = await waitForPending(pending, 5000, "capture");
+		if (!capturesSettled) {
+			// A capture may still be inside SQLite. Keep the shared core alive rather
+			// than closing its store underneath that operation.
+			initializePromise = null;
+			initialized = false;
+			shuttingDown = false;
+			return;
+		}
 		if (memory) {
+			const flush = memory.flush();
+			const flushSettled = await waitForPending([flush], 5000, "pipeline flush");
+			if (!flushSettled) {
+				initializePromise = null;
+				initialized = false;
+				shuttingDown = false;
+				return;
+			}
 			await memory.destroy();
 			memory = null;
 		}
+		initializePromise = null;
+		initialized = false;
+		shuttingDown = false;
 	});
 
 	pi.registerTool({
@@ -244,8 +341,8 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const hits = await getMemory(ctx).searchMemories({
 				query: params.query,
-				limit: params.limit,
-				...(params.type ? { type: params.type as MemoryType } : {}),
+				limit: safeLimit(params.limit),
+				...(params.type && isValidMemoryType(params.type, true) ? { type: params.type } : {}),
 			});
 			const text =
 				hits.length === 0
@@ -269,8 +366,8 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const hits = await getMemory(ctx).searchConversations({
 				query: params.query,
-				limit: params.limit,
-				...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+				limit: safeLimit(params.limit),
+				...(params.sessionKey?.trim() ? { sessionKey: params.sessionKey.trim() } : {}),
 			});
 			const text =
 				hits.length === 0
@@ -326,6 +423,11 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 		},
 	});
 };
+
+function safeLimit(value: number | undefined): number {
+	if (value === undefined || !Number.isFinite(value)) return 10;
+	return Math.min(20, Math.max(1, Math.trunc(value)));
+}
 
 function prependToUserMessage(message: AgentMessage, prepend: string): AgentMessage {
 	if (!("role" in message) || message.role !== "user") return message;

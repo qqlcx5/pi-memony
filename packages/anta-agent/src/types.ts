@@ -39,10 +39,15 @@ export interface ConversationMessage {
 	timestamp: number;
 }
 
-/** A finished agent turn captured by the host for L0 recording and extraction. */
-export interface CompletedTurn {
+/** Stable host/session scope used to associate memory work with one conversation. */
+export interface MemoryScope {
+	sessionId?: string;
 	sessionKey: string;
 	cwd?: string;
+}
+
+/** A finished agent turn captured by the host for L0 recording and extraction. */
+export interface CompletedTurn extends MemoryScope {
 	messages: ConversationMessage[];
 }
 
@@ -154,6 +159,7 @@ export interface MemoryStats {
 export interface RememberOptions {
 	type?: MemoryType;
 	priority?: number;
+	sessionId?: string;
 	sessionKey?: string;
 	cwd?: string;
 }

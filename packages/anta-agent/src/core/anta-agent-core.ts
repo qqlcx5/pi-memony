@@ -49,6 +49,12 @@ export class AntaAgent {
 	private readonly writer: MemoryWriter;
 	private readonly pipeline: PipelineManager;
 	private readonly logger?: HostLogger;
+	private initialized = false;
+	private destroyed = false;
+	private initializePromise: Promise<void> | null = null;
+	private destroyPromise: Promise<void> | null = null;
+	private storeClosed = false;
+	private backfillPromise: Promise<void> | null = null;
 
 	constructor(options: AntaAgentOptions) {
 		this.config = parseAntaAgentConfig(options.config);
@@ -75,10 +81,22 @@ export class AntaAgent {
 
 	/** Create directories, apply L0 retention, sync embedding metadata, and backfill vectors. */
 	async initialize(): Promise<void> {
+		if (this.destroyed || this.initialized) return;
+		if (this.initializePromise) return this.initializePromise;
+		this.initializePromise = this.initializeInner();
+		try {
+			await this.initializePromise;
+		} finally {
+			this.initializePromise = null;
+		}
+	}
+
+	private async initializeInner(): Promise<void> {
 		mkdirSync(this.paths.conversationsDir, { recursive: true });
 		mkdirSync(this.paths.recordsDir, { recursive: true });
 		mkdirSync(this.paths.sceneBlocksDir, { recursive: true });
 		mkdirSync(this.paths.metadataDir, { recursive: true });
+		this.recorder.replayJsonl();
 		if (this.config.capture.l0RetentionDays > 0) {
 			try {
 				this.recorder.cleanup(this.config.capture.l0RetentionDays);
@@ -86,16 +104,26 @@ export class AntaAgent {
 				this.logger?.warn?.(`[anta-agent] L0 retention cleanup failed: ${errorMessage(error)}`);
 			}
 		}
-		if (!this.embedding.isReady()) return;
-		const changed = this.store.setEmbeddingMeta(
-			this.config.embedding.provider,
-			this.config.embedding.model,
-			this.config.embedding.dimensions,
-		);
-		if (changed) this.logger?.info?.("[anta-agent] embedding setup changed; stored vectors cleared");
-		// Backfill in the background: initialize runs on the prompt path and
-		// re-embedding a large store must not delay the first recall.
-		void this.backfillVectors();
+		if (this.embedding.isReady()) {
+			const changed = this.store.setEmbeddingMeta(
+				this.config.embedding.provider,
+				this.config.embedding.model,
+				this.config.embedding.dimensions,
+			);
+			if (changed) this.logger?.info?.("[anta-agent] embedding setup changed; stored vectors cleared");
+			// Backfill in the background: initialize runs on the prompt path and
+			// re-embedding a large store must not delay the first recall.
+			this.backfillPromise = this.backfillVectors();
+			void this.backfillPromise.then(
+				() => {
+					this.backfillPromise = null;
+				},
+				() => {
+					this.backfillPromise = null;
+				},
+			);
+		}
+		this.initialized = true;
 	}
 
 	/** Embed any L1 records that lack a stored vector (provider change or first enable). */
@@ -125,7 +153,7 @@ export class AntaAgent {
 
 	/** Persist a completed turn (L0) and notify the distillation pipeline. */
 	async capture(turn: CompletedTurn): Promise<void> {
-		if (!this.config.capture.enabled) return;
+		if (this.destroyed || !this.config.capture.enabled) return;
 		try {
 			await this.recorder.record(turn);
 			this.pipeline.notifyTurn();
@@ -136,7 +164,7 @@ export class AntaAgent {
 
 	/** Recall memories relevant to `userText`; returns undefined when nothing to inject. */
 	async recall(userText: string): Promise<RecallResult | undefined> {
-		if (!this.config.recall.enabled) return undefined;
+		if (this.destroyed || !this.config.recall.enabled) return undefined;
 		try {
 			return await withTimeout(this.recallInner(userText), this.config.recall.timeoutMs);
 		} catch (error) {
@@ -238,6 +266,7 @@ export class AntaAgent {
 
 	/** Manually save a memory (/remember). */
 	async remember(content: string, options?: RememberOptions): Promise<MemoryRecord> {
+		if (this.destroyed) throw new Error("anta-agent is destroyed");
 		return this.writer.remember(content, options ?? {});
 	}
 
@@ -258,12 +287,40 @@ export class AntaAgent {
 
 	/** Force pending L1 extraction now. */
 	async flush(): Promise<void> {
+		if (this.destroyed) return;
 		await this.pipeline.flush();
 	}
 
-	async destroy(): Promise<void> {
-		await this.pipeline.destroy();
-		this.store.close();
+	async destroy(timeoutMs = 5000): Promise<void> {
+		if (this.destroyPromise) return this.destroyPromise;
+		this.destroyed = true;
+		this.destroyPromise = (async () => {
+			const pipelineStopped = await this.pipeline.destroy(timeoutMs);
+			if (!pipelineStopped) {
+				this.logger?.warn?.("[anta-agent] store close deferred because pipeline is still active");
+				void this.closeAfterQuiescence();
+				return;
+			}
+			await this.closeStoreWhenReady();
+		})();
+		return this.destroyPromise;
+	}
+
+	private async closeAfterQuiescence(): Promise<void> {
+		try {
+			await this.pipeline.waitForQuiescence();
+			await this.closeStoreWhenReady();
+		} catch (error) {
+			this.logger?.error?.(`[anta-agent] deferred store close failed: ${errorMessage(error)}`);
+		}
+	}
+
+	private async closeStoreWhenReady(): Promise<void> {
+		if (this.backfillPromise) await this.backfillPromise;
+		if (!this.storeClosed) {
+			this.store.close();
+			this.storeClosed = true;
+		}
 	}
 }
 

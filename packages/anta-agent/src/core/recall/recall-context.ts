@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { AntaAgentConfig } from "../../config.ts";
 import type { RecallHit, RecallResult, RecallStrategy } from "../../types.ts";
 import { generateSceneNavigation, type SceneIndexEntry } from "../scene/scene-store.ts";
+import { sanitizeUntrustedText } from "../security.ts";
 import type { StoragePaths } from "../storage/paths.ts";
 
 const RECALL_SEPARATOR = "\n";
@@ -42,11 +43,11 @@ export function buildRecallResult(params: {
 	const sceneNavigationRaw = sceneEntries.length > 0 ? generateSceneNavigation(sceneEntries) : "";
 	// Conversation-derived text can carry literal closing tags; neutralize any
 	// occurrence so it cannot break out of its injection block.
-	const sceneNavigation = sceneNavigationRaw.replaceAll("</scene-navigation>", "<\\/scene-navigation>");
+	const sceneNavigation = sanitizeUntrustedText(sceneNavigationRaw, { maxChars: 20_000 });
 
 	const stableParts: string[] = [];
 	if (personaContent) {
-		const escaped = personaContent.replaceAll("</user-persona>", "<\\/user-persona>");
+		const escaped = sanitizeUntrustedText(personaContent, { maxChars: 50_000 });
 		stableParts.push(`<user-persona>\n${escaped}\n</user-persona>`);
 	}
 	if (sceneNavigation) stableParts.push(`<scene-navigation>\n${sceneNavigation}\n</scene-navigation>`);
@@ -70,13 +71,12 @@ export function buildRecallResult(params: {
 const TRUNCATION_NOTICE = "…（已截断；可用 memory_search 查看详情）";
 
 function formatMemoryLine(hit: RecallHit, config: AntaAgentConfig): string {
-	let content = hit.content;
+	let content = sanitizeUntrustedText(hit.content);
 	const maxChars = config.recall.maxCharsPerMemory;
 	if (maxChars > 0 && content.length > maxChars) {
 		// Cut on code points, not UTF-16 units, so surrogate pairs survive.
 		content = `${[...content].slice(0, Math.max(0, maxChars - 1)).join("")}${TRUNCATION_NOTICE}`;
 	}
-	content = content.replaceAll("</relevant-memories>", "<\\/relevant-memories>");
 	const prefix = `- [${hit.type}]`;
 	return `${prefix} ${content}`;
 }
@@ -87,8 +87,9 @@ export function applyRecallBudget(hits: RecallHit[], maxTotalChars: number): Rec
 	const kept: RecallHit[] = [];
 	let total = 0;
 	for (const hit of hits) {
-		if (total + hit.content.length > maxTotalChars) break;
-		total += hit.content.length;
+		const size = [...sanitizeUntrustedText(hit.content)].length;
+		if (total + size > maxTotalChars) continue;
+		total += size;
 		kept.push(hit);
 	}
 	return kept;
