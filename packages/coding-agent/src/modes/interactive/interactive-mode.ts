@@ -1006,7 +1006,7 @@ export class InteractiveMode {
 			);
 			const onboarding = theme.fg(
 				"dim",
-				`${displayName} can explain its own features and look up its docs. Ask it how to use or extend ${displayName}.`,
+				`Ask ${displayName} about its features, usage, or extensions. It can also look up the relevant documentation.`,
 			);
 			this.builtInHeader = new ExpandableText(
 				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,

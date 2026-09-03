@@ -1,6 +1,6 @@
 {
 	"name": "anta-agent",
-	"version": "0.84.8",
+	"version": "0.84.9",
 	"description": "anta-agent: a coding agent with built-in four-layer memory (conversations, atomic memories, scenes, persona), built on the pi base",
 	"type": "module",
 	"main": "./dist/index.js",
