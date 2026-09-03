@@ -33,7 +33,15 @@ import { listModels } from "./cli/list-models.ts";
 import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
 import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.ts";
-import { APP_NAME, ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION } from "./config.ts";
+import {
+	ENV_SESSION_DIR,
+	expandTildePath,
+	getAgentDir,
+	getDisplayAppName,
+	getDisplayVersion,
+	getPackageDir,
+	setDisplayBranding,
+} from "./config.ts";
 import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import {
 	type AgentSessionRuntimeDiagnostic,
@@ -64,12 +72,13 @@ import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/tru
 import { builtInExtensions } from "./extensions/index.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
+import type { FooterLabels } from "./modes/interactive/components/footer.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { cleanupManagedInstall, handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
 
-const EXTENSION_LOAD_FAILURE_HINT = `Hint: Start without extensions using "${APP_NAME} -ne".`;
+const extensionLoadFailureHint = (): string => `Hint: Start without extensions using "${getDisplayAppName()} -ne".`;
 
 /**
  * Read all content from piped stdin.
@@ -149,7 +158,7 @@ async function runAuthCommand(args: string[]): Promise<boolean> {
 	if (parsed.unknownFlags.size > 0) {
 		const option = parsed.unknownFlags.keys().next().value;
 		console.error(chalk.red(`Unknown option --${option} for "${getAuthCommandName(command.kind)}".`));
-		console.error(chalk.dim(`Use "${APP_NAME} --help" or "${getAuthCommandUsage(command.kind)}".`));
+		console.error(chalk.dim(`Use "${getDisplayAppName()} --help" or "${getAuthCommandUsage(command.kind)}".`));
 		process.exitCode = 1;
 		return true;
 	}
@@ -556,9 +565,14 @@ async function promptForMissingSessionCwd(
 
 export interface MainOptions {
 	extensionFactories?: InlineExtension[];
+	/** Presentation-only overrides for derived distributions. */
+	branding?: { name?: string; title?: string; version?: string };
+	/** Optional labels for the interactive footer; defaults preserve pi output. */
+	footerLabels?: Partial<FooterLabels>;
 }
 
 export async function main(args: string[], options?: MainOptions) {
+	setDisplayBranding(options?.branding);
 	resetTimings();
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
@@ -612,7 +626,7 @@ export async function main(args: string[], options?: MainOptions) {
 	time("parseArgs");
 
 	if (parsed.version) {
-		console.log(VERSION);
+		console.log(getDisplayVersion());
 		process.exit(0);
 	}
 
@@ -897,7 +911,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	if (hasRuntimeErrors) {
 		if (runtime.diagnostics.some((diagnostic) => diagnostic.message.includes("Failed to load extension"))) {
-			console.error(chalk.yellow(EXTENSION_LOAD_FAILURE_HINT));
+			console.error(chalk.yellow(extensionLoadFailureHint()));
 		}
 		process.exit(1);
 	}
@@ -929,6 +943,8 @@ export async function main(args: string[], options?: MainOptions) {
 		await runRpcMode(runtime);
 	} else if (appMode === "interactive") {
 		const interactiveMode = new InteractiveMode(runtime, {
+			branding: options?.branding,
+			footerLabels: options?.footerLabels,
 			migratedProviders,
 			startupDiagnostics,
 			modelFallbackMessage,

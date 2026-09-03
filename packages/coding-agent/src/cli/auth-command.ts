@@ -1,5 +1,5 @@
 import type { AuthResult } from "@earendil-works/pi-ai";
-import { APP_NAME } from "../config.ts";
+import { getDisplayAppName } from "../config.ts";
 import type { Args } from "./args.ts";
 
 export type AuthCommandKind = "check" | "api_key" | "bearer_token";
@@ -15,18 +15,21 @@ export interface AuthCommand {
 
 export class AuthCommandError extends Error {}
 
-const AUTH_COMMAND_USAGE: Record<AuthCommandKind, string> = {
-	check: `${APP_NAME} auth check --provider <provider> [--json] [--credentials] [--no-refresh]`,
-	api_key: `${APP_NAME} auth print-api-key --provider <provider> [--model <model>]`,
-	bearer_token: `${APP_NAME} auth print-bearer-token --provider <provider> [--model <model>] [--min-expiry <duration>]`,
-};
+function authCommandUsage(kind: AuthCommandKind): string {
+	const appName = getDisplayAppName();
+	return kind === "check"
+		? `${appName} auth check --provider <provider> [--json] [--credentials] [--no-refresh]`
+		: kind === "api_key"
+			? `${appName} auth print-api-key --provider <provider> [--model <model>]`
+			: `${appName} auth print-bearer-token --provider <provider> [--model <model>] [--min-expiry <duration>]`;
+}
 
 export function getAuthCommandName(kind: AuthCommandKind): string {
 	return kind === "check" ? "auth check" : kind === "api_key" ? "auth print-api-key" : "auth print-bearer-token";
 }
 
 export function getAuthCommandUsage(kind: AuthCommandKind): string {
-	return AUTH_COMMAND_USAGE[kind];
+	return authCommandUsage(kind);
 }
 
 export function isAuthCommandHelp(args: string[]): boolean {
@@ -37,10 +40,11 @@ export function isAuthCommandHelp(args: string[]): boolean {
 }
 
 export function printAuthCommandHelp(): void {
+	const appName = getDisplayAppName();
 	console.log(`Usage:
-  pi auth print-api-key [--provider <provider>] [--model <model>]
-  pi auth print-bearer-token [--provider <provider>] [--model <model>] [--min-expiry <duration>]
-  pi auth check [--provider <provider>] [--model <model>] [--json] [--credentials] [--no-refresh]
+	  ${appName} auth print-api-key [--provider <provider>] [--model <model>]
+	  ${appName} auth print-bearer-token [--provider <provider>] [--model <model>] [--min-expiry <duration>]
+	  ${appName} auth check [--provider <provider>] [--model <model>] [--json] [--credentials] [--no-refresh]
 
 Auth commands require at least one of --provider or --model. Checks refresh expired OAuth credentials by default; --no-refresh prevents this. --credentials emits the credential, or includes it in JSON output.`);
 }
@@ -58,7 +62,7 @@ export function parseAuthCommand(args: string[]): AuthCommand | undefined {
 					: undefined;
 	if (!kind) {
 		throw new AuthCommandError(
-			`Unknown auth command "${args[1] ?? ""}". Use "${APP_NAME} auth print-api-key", "${APP_NAME} auth print-bearer-token", or "${APP_NAME} auth check".`,
+			`Unknown auth command "${args[1] ?? ""}". Use "${getDisplayAppName()} auth print-api-key", "${getDisplayAppName()} auth print-bearer-token", or "${getDisplayAppName()} auth check".`,
 		);
 	}
 

@@ -29,6 +29,30 @@ export function formatTokens(count: number): string {
 	return `${Math.round(count / 1000000)}M`;
 }
 
+export interface FooterLabels {
+	input: string;
+	output: string;
+	cacheRead: string;
+	cacheWrite: string;
+	cacheHit: string;
+	auto: string;
+	subscription: string;
+	noModel: string;
+	thinkingOff: string;
+}
+
+export const DEFAULT_FOOTER_LABELS: FooterLabels = {
+	input: "",
+	output: "",
+	cacheRead: "R",
+	cacheWrite: "W",
+	cacheHit: "CH",
+	auto: " (auto)",
+	subscription: " (sub)",
+	noModel: "no-model",
+	thinkingOff: "thinking off",
+};
+
 export function formatCwdForFooter(cwd: string, home: string | undefined): string {
 	if (!home) return cwd;
 
@@ -51,10 +75,12 @@ export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
 	private session: AgentSession;
 	private footerData: ReadonlyFooterDataProvider;
+	private labels: FooterLabels;
 
-	constructor(session: AgentSession, footerData: ReadonlyFooterDataProvider) {
+	constructor(session: AgentSession, footerData: ReadonlyFooterDataProvider, labels: Partial<FooterLabels> = {}) {
 		this.session = session;
 		this.footerData = footerData;
+		this.labels = { ...DEFAULT_FOOTER_LABELS, ...labels };
 	}
 
 	setSession(session: AgentSession): void {
@@ -127,12 +153,12 @@ export class FooterComponent implements Component {
 
 		// Build stats line
 		const statsParts = [];
-		if (usageTotals.input) statsParts.push(`↑${formatTokens(usageTotals.input)}`);
-		if (usageTotals.output) statsParts.push(`↓${formatTokens(usageTotals.output)}`);
-		if (usageTotals.cacheRead) statsParts.push(`R${formatTokens(usageTotals.cacheRead)}`);
-		if (usageTotals.cacheWrite) statsParts.push(`W${formatTokens(usageTotals.cacheWrite)}`);
+		if (usageTotals.input) statsParts.push(`↑${this.labels.input}${formatTokens(usageTotals.input)}`);
+		if (usageTotals.output) statsParts.push(`↓${this.labels.output}${formatTokens(usageTotals.output)}`);
+		if (usageTotals.cacheRead) statsParts.push(`${this.labels.cacheRead}${formatTokens(usageTotals.cacheRead)}`);
+		if (usageTotals.cacheWrite) statsParts.push(`${this.labels.cacheWrite}${formatTokens(usageTotals.cacheWrite)}`);
 		if ((usageTotals.cacheRead > 0 || usageTotals.cacheWrite > 0) && latestCacheHitRate !== undefined) {
-			statsParts.push(`CH${latestCacheHitRate.toFixed(1)}%`);
+			statsParts.push(`${this.labels.cacheHit}${latestCacheHitRate.toFixed(1)}%`);
 		}
 
 		// Kimi Coding is subscription-backed despite using API-key authentication.
@@ -140,13 +166,13 @@ export class FooterComponent implements Component {
 			? state.model.provider === "kimi-coding" || this.session.modelRuntime.isUsingSubscription(state.model.provider)
 			: false;
 		if (usageTotals.cost || usingSubscription) {
-			const costStr = `$${usageTotals.cost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
+			const costStr = `$${usageTotals.cost.toFixed(3)}${usingSubscription ? this.labels.subscription : ""}`;
 			statsParts.push(costStr);
 		}
 
 		// Colorize context percentage based on usage
 		let contextPercentStr: string;
-		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
+		const autoIndicator = this.autoCompactEnabled ? this.labels.auto : "";
 		const contextPercentDisplay =
 			contextPercent === "?"
 				? `?/${formatTokens(contextWindow)}${autoIndicator}`
@@ -166,7 +192,7 @@ export class FooterComponent implements Component {
 		let statsLeft = statsParts.join(" ");
 
 		// Add model name on the right side, plus thinking level if model supports it
-		const modelName = state.model?.id || "no-model";
+		const modelName = state.model?.id || this.labels.noModel;
 
 		let statsLeftWidth = visibleWidth(statsLeft);
 
@@ -184,7 +210,7 @@ export class FooterComponent implements Component {
 		if (state.model?.reasoning) {
 			const thinkingLevel = state.thinkingLevel || "off";
 			rightSideWithoutProvider =
-				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
+				thinkingLevel === "off" ? `${modelName} • ${this.labels.thinkingOff}` : `${modelName} • ${thinkingLevel}`;
 		}
 
 		// Prepend the provider in parentheses if there are multiple providers and there's enough room

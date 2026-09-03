@@ -31,6 +31,7 @@ export {
 	type SceneOp,
 	writeSceneIndex,
 } from "./core/scene/scene-store.ts";
+export { containsPromptInjection, sanitizeUntrustedText } from "./core/security.ts";
 export { type StoragePaths, storagePaths } from "./core/storage/paths.ts";
 export {
 	createEmbeddingService,
@@ -41,6 +42,7 @@ export {
 export { rrfFuse } from "./core/store/hybrid-search.ts";
 export { buildFtsQuery, SqliteMemoryStore } from "./core/store/sqlite-store.ts";
 export { decodeVector, encodeVector, VectorIndex } from "./core/store/vector-index.ts";
+export { getPiSessionIdentity } from "./host-adapter.ts";
 export type {
 	ChatMemoryType,
 	CompletedTurn,

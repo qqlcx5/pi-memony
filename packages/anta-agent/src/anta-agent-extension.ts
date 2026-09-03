@@ -2,8 +2,15 @@ import { join } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Context, SimpleStreamOptions, UserMessage } from "@earendil-works/pi-ai/compat";
 import { completeSimple, contentText } from "@earendil-works/pi-ai/compat";
-import type { ExtensionAPI, ExtensionContext, ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	ExtensionFactory,
+	ReadonlyFooterDataProvider,
+	Theme,
+} from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { isValidMemoryType } from "./core/parse.ts";
 import { getPiSessionIdentity } from "./host-adapter.ts";
@@ -122,6 +129,87 @@ function sessionKey(ctx: ExtensionContext): string {
 	return sessionIdentity(ctx).sessionKey;
 }
 
+function formatTokens(count: number): string {
+	if (count < 1000) return String(count);
+	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1000000) return `${Math.round(count / 1000)}k`;
+	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+	return `${Math.round(count / 1000000)}M`;
+}
+
+function createChineseFooter(
+	ctx: ExtensionContext,
+	tui: TUI,
+	theme: Theme,
+	footerData: ReadonlyFooterDataProvider,
+): Component & { dispose?(): void } {
+	const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+	return {
+		dispose: unsubscribe,
+		invalidate() {},
+		render(width: number): string[] {
+			let input = 0;
+			let output = 0;
+			let cacheRead = 0;
+			let cacheWrite = 0;
+			let cost = 0;
+			let latestCacheHitRate: number | undefined;
+
+			for (const entry of ctx.sessionManager.getEntries()) {
+				if (entry.type === "message" && entry.message.role === "assistant") {
+					const usage = entry.message.usage;
+					input += usage.input;
+					output += usage.output;
+					cacheRead += usage.cacheRead;
+					cacheWrite += usage.cacheWrite;
+					cost += usage.cost.total;
+					const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+					latestCacheHitRate = promptTokens > 0 ? (usage.cacheRead / promptTokens) * 100 : undefined;
+				} else if (entry.type === "message" && entry.message.role === "toolResult" && entry.message.usage) {
+					const usage = entry.message.usage;
+					input += usage.input;
+					output += usage.output;
+					cacheRead += usage.cacheRead;
+					cacheWrite += usage.cacheWrite;
+					cost += usage.cost.total;
+				} else if ((entry.type === "branch_summary" || entry.type === "compaction") && entry.usage) {
+					const usage = entry.usage;
+					input += usage.input;
+					output += usage.output;
+					cacheRead += usage.cacheRead;
+					cacheWrite += usage.cacheWrite;
+					cost += usage.cost.total;
+				}
+			}
+
+			const stats: string[] = [];
+			if (input) stats.push(`↑输入${formatTokens(input)}`);
+			if (output) stats.push(`↓输出${formatTokens(output)}`);
+			if (cacheRead) stats.push(`读${formatTokens(cacheRead)}`);
+			if (cacheWrite) stats.push(`写${formatTokens(cacheWrite)}`);
+			if (latestCacheHitRate !== undefined && (cacheRead || cacheWrite)) {
+				stats.push(`命中${latestCacheHitRate.toFixed(1)}%`);
+			}
+			if (cost) stats.push(`$${cost.toFixed(3)}`);
+
+			const contextUsage = ctx.getContextUsage();
+			const contextPercent = contextUsage?.percent;
+			const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+			stats.push(
+				`${contextPercent === null || contextPercent === undefined ? "?" : contextPercent.toFixed(1)}%/${formatTokens(contextWindow)}（自动）`,
+			);
+
+			let left = theme.fg("dim", stats.join(" "));
+			const branch = footerData.getGitBranch();
+			const right = theme.fg("dim", `${ctx.model?.id ?? "无模型"}${branch ? ` (${branch})` : ""}`);
+			if (visibleWidth(left) + visibleWidth(right) + 2 > width) {
+				left = truncateToWidth(left, Math.max(0, width - visibleWidth(right) - 2), "...");
+			}
+			return [left + " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right))) + right];
+		},
+	};
+}
+
 const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 	if (!memoryEnabled()) return;
 
@@ -231,6 +319,9 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 
 	pi.on("session_start", (event, ctx) => {
 		shuttingDown = false;
+		if (ctx.mode === "tui") {
+			ctx.ui.setFooter((tui, theme, footerData) => createChineseFooter(ctx, tui, theme, footerData));
+		}
 		if (
 			event.reason === "startup" ||
 			event.reason === "reload" ||

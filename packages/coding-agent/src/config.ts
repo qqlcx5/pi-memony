@@ -504,6 +504,31 @@ export const VERSION: string = pkg.version || "0.0.0";
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
 
+export interface DisplayBranding {
+	name?: string;
+	title?: string;
+	version?: string;
+}
+
+let displayBranding: DisplayBranding | undefined;
+
+/** Set presentation-only branding for an embedding distribution. */
+export function setDisplayBranding(branding: DisplayBranding | undefined): void {
+	displayBranding = branding;
+}
+
+export function getDisplayAppName(): string {
+	return displayBranding?.name || APP_NAME;
+}
+
+export function getDisplayAppTitle(): string {
+	return displayBranding?.title || APP_TITLE;
+}
+
+export function getDisplayVersion(): string {
+	return displayBranding?.version || VERSION;
+}
+
 export function expandTildePath(path: string): string {
 	return normalizePath(path);
 }

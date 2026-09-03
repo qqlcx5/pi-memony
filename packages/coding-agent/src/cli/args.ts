@@ -4,7 +4,7 @@
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import chalk from "chalk";
-import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
+import { CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR, getDisplayAppName } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
 import type { TuiMode } from "../core/settings-manager.ts";
 
@@ -249,6 +249,7 @@ export function parseArgs(args: string[]): Args {
 }
 
 export function printHelp(extensionFlags?: ExtensionFlag[]): void {
+	const appName = getDisplayAppName();
 	const extensionFlagsText =
 		extensionFlags && extensionFlags.length > 0
 			? `\n${chalk.bold("Extension CLI Flags:")}\n${extensionFlags
@@ -259,20 +260,20 @@ export function printHelp(extensionFlags?: ExtensionFlag[]): void {
 					})
 					.join("\n")}\n`
 			: "";
-	console.log(`${chalk.bold(APP_NAME)} - AI coding assistant with read, bash, edit, write tools
+	console.log(`${chalk.bold(appName)} - AI coding assistant with read, bash, edit, write tools
 
 ${chalk.bold("Usage:")}
-  ${APP_NAME} [options] [--] [@files...] [messages...]
+  ${appName} [options] [--] [@files...] [messages...]
 
 ${chalk.bold("Commands:")}
-  ${APP_NAME} install <source> [-l]     Install extension source and add to settings
-  ${APP_NAME} remove <source> [-l]      Remove extension source from settings
-  ${APP_NAME} uninstall <source> [-l]   Alias for remove
-  ${APP_NAME} update [source|self|pi]   Update pi, extensions, or model catalogs
-  ${APP_NAME} list                      List installed extensions from settings
-  ${APP_NAME} config [-l]               Open TUI to enable/disable package resources (Tab switches scope)
-  ${APP_NAME} auth <command>            Print credentials or check provider readiness
-  ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list/config/auth
+  ${appName} install <source> [-l]     Install extension source and add to settings
+  ${appName} remove <source> [-l]      Remove extension source from settings
+  ${appName} uninstall <source> [-l]   Alias for remove
+  ${appName} update [source|self|pi]   Update the agent, extensions, or model catalogs
+  ${appName} list                      List installed extensions from settings
+  ${appName} config [-l]               Open TUI to enable/disable package resources (Tab switches scope)
+  ${appName} auth <command>            Print credentials or check provider readiness
+  ${appName} <command> --help          Show help for install/remove/uninstall/update/list/config/auth
 
 ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: google)
@@ -324,65 +325,65 @@ Extensions can register additional flags (e.g., --plan from plan-mode extension)
 
 ${chalk.bold("Examples:")}
   # Print a provider API key for an external client
-  ${APP_NAME} auth print-api-key --provider openai
+  ${appName} auth print-api-key --provider openai
 
   # Print an OAuth bearer token for an external client (refreshes if expired)
-  ${APP_NAME} auth print-bearer-token --provider openai-codex
+  ${appName} auth print-bearer-token --provider openai-codex
 
   # Interactive mode
-  ${APP_NAME}
+  ${appName}
 
   # Interactive mode with initial prompt
-  ${APP_NAME} "List all .ts files in src/"
+  ${appName} "List all .ts files in src/"
 
   # Include files in initial message
-  ${APP_NAME} @prompt.md @image.png "What color is the sky?"
+  ${appName} @prompt.md @image.png "What color is the sky?"
 
   # Non-interactive mode (process and exit)
-  ${APP_NAME} -p "List all .ts files in src/"
+  ${appName} -p "List all .ts files in src/"
 
   # Prompt beginning with a dash
-  ${APP_NAME} -p -- "- Summarize these points"
+  ${appName} -p -- "- Summarize these points"
 
   # Multiple messages (interactive)
-  ${APP_NAME} "Read package.json" "What dependencies do we have?"
+  ${appName} "Read package.json" "What dependencies do we have?"
 
   # Continue previous session
-  ${APP_NAME} --continue "What did we discuss?"
+  ${appName} --continue "What did we discuss?"
 
   # Start a named session
-  ${APP_NAME} --name "Refactor auth module"
+  ${appName} --name "Refactor auth module"
 
   # Use different model
-  ${APP_NAME} --provider openai --model gpt-4o-mini "Help me refactor this code"
+  ${appName} --provider openai --model gpt-4o-mini "Help me refactor this code"
 
   # Use model with provider prefix (no --provider needed)
-  ${APP_NAME} --model openai/gpt-4o "Help me refactor this code"
+  ${appName} --model openai/gpt-4o "Help me refactor this code"
 
   # Use model with thinking level shorthand
-  ${APP_NAME} --model sonnet:high "Solve this complex problem"
+  ${appName} --model sonnet:high "Solve this complex problem"
 
   # Limit model cycling to specific models
-  ${APP_NAME} --models claude-sonnet,claude-haiku,gpt-4o
+  ${appName} --models claude-sonnet,claude-haiku,gpt-4o
 
   # Limit to a specific provider with glob pattern
-  ${APP_NAME} --models "github-copilot/*"
+  ${appName} --models "github-copilot/*"
 
   # Cycle models with fixed thinking levels
-  ${APP_NAME} --models sonnet:high,haiku:low
+  ${appName} --models sonnet:high,haiku:low
 
   # Start with a specific thinking level
-  ${APP_NAME} --thinking high "Solve this complex problem"
+  ${appName} --thinking high "Solve this complex problem"
 
   # Read-only mode (no file modifications possible)
-  ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
+  ${appName} --tools read,grep,find,ls -p "Review the code in src/"
 
   # Disable one tool while keeping the rest available
-  ${APP_NAME} --exclude-tools ask_question
+  ${appName} --exclude-tools ask_question
 
   # Export a session file to HTML
-  ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
-  ${APP_NAME} --export session.jsonl output.html
+  ${appName} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
+  ${appName} --export session.jsonl output.html
 
 ${chalk.bold("Environment Variables:")}
   ANTHROPIC_AUTH_TOKEN             - Anthropic bearer auth token

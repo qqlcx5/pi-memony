@@ -224,6 +224,38 @@ describe("FooterComponent width handling", () => {
 		expect(stripAnsi(footer.render(120)[1])).toContain("$1.234 (sub)");
 	});
 
+	it("uses localized labels without changing token calculations or width", () => {
+		const session = createSession({
+			sessionName: "",
+			usage: {
+				input: 24_000,
+				output: 894,
+				cacheRead: 18_000,
+				cacheWrite: 2_000,
+				cost: { total: 0 },
+			},
+		});
+		const footer = new FooterComponent(session, createFooterData(1), {
+			input: "输入",
+			output: "输出",
+			cacheRead: "读",
+			cacheWrite: "写",
+			cacheHit: "命中",
+			auto: "（自动）",
+			subscription: "（订阅）",
+			noModel: "无模型",
+			thinkingOff: "思考关闭",
+		});
+
+		const lines = footer.render(120).map(stripAnsi);
+		expect(lines[1]).toContain("↑输入24k");
+		expect(lines[1]).toContain("↓输出894");
+		expect(lines[1]).toContain("读18k");
+		expect(lines[1]).toContain("命中40.9%");
+		expect(lines[1]).toContain("（自动）");
+		for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(120);
+	});
+
 	it("marks explicitly identified subscription auth", () => {
 		const session = createSession({ sessionName: "", provider: "anthropic", usingSubscription: true });
 		const footer = new FooterComponent(session, createFooterData(1));

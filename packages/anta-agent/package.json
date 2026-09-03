@@ -5,6 +5,10 @@
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
+	"piConfig": {
+		"name": "anta-agent",
+		"configDir": ".anta-agent"
+	},
 	"bin": {
 		"at": "./dist/cli.js"
 	},
@@ -19,7 +23,7 @@
 	],
 	"scripts": {
 		"clean": "node -e \"import('node:fs/promises').then(fs=>fs.rm('dist',{recursive:true,force:true}))\"",
-		"build": "tsgo -p tsconfig.build.json && shx chmod +x dist/cli.js",
+		"build": "tsgo -p tsconfig.build.json && node ./scripts/copy-pi-assets.mjs && shx chmod +x dist/cli.js",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},

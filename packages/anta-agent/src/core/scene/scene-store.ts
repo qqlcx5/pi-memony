@@ -1,7 +1,8 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
 import type { HostLogger } from "../../types.ts";
 import { errorMessage } from "../errors.ts";
+import { sanitizeUntrustedText } from "../security.ts";
 import type { StoragePaths } from "../storage/paths.ts";
 
 export interface SceneIndexEntry {
@@ -14,6 +15,9 @@ export interface SceneIndexEntry {
 
 const DELETED_MARKER = "[DELETED]";
 const META_HEADER = /-----META-START-----\n([\s\S]*?)\n?-----META-END-----/;
+const MAX_SCENE_FILE_CHARS = 180;
+const MAX_SCENE_CONTENT_CHARS = 20_000;
+const MAX_SCENE_SUMMARY_CHARS = 2_000;
 
 /** Filename policy shared with the L2 prompt: safe chars, `.md` suffix. */
 export function normalizeSceneFileName(name: string): string {
@@ -25,18 +29,52 @@ export function normalizeSceneFileName(name: string): string {
 	return cleaned.endsWith(".md") ? cleaned : `${cleaned}.md`;
 }
 
+function validSceneFile(name: string): string | null {
+	const raw = name.trim();
+	if (!raw || raw.length > MAX_SCENE_FILE_CHARS || raw.includes("\u0000") || isAbsolute(raw)) return null;
+	if (raw.includes("/") || raw.includes("\\") || raw.split(".").includes("..")) return null;
+	const file = normalizeSceneFileName(raw);
+	if (!file || file === ".md" || file === "scene_index.json" || basename(file) !== file) return null;
+	return file;
+}
+
+function sceneTarget(paths: StoragePaths, file: string): string {
+	const target = join(paths.sceneBlocksDir, file);
+	const relativePath = relative(paths.sceneBlocksDir, target);
+	if (
+		relativePath === "" ||
+		relativePath.startsWith(`..${sep}`) ||
+		relativePath === ".." ||
+		isAbsolute(relativePath)
+	) {
+		throw new Error("scene path escapes the scene-block directory");
+	}
+	return target;
+}
+
 export function readSceneIndex(paths: StoragePaths): SceneIndexEntry[] {
 	try {
 		if (existsSync(paths.sceneIndexFile)) {
 			const parsed = JSON.parse(readFileSync(paths.sceneIndexFile, "utf8")) as unknown;
 			if (Array.isArray(parsed)) {
-				return parsed.filter(
-					(entry): entry is SceneIndexEntry =>
-						typeof entry === "object" &&
-						entry !== null &&
-						typeof (entry as SceneIndexEntry).file === "string" &&
-						typeof (entry as SceneIndexEntry).summary === "string",
-				);
+				return parsed.flatMap((entry) => {
+					if (typeof entry !== "object" || entry === null) return [];
+					const record = entry as Record<string, unknown>;
+					const file = typeof record.file === "string" ? validSceneFile(record.file) : null;
+					if (!file || typeof record.summary !== "string") return [];
+					return [
+						{
+							file,
+							summary: sanitizeUntrustedText(record.summary, { maxChars: MAX_SCENE_SUMMARY_CHARS }),
+							heat:
+								typeof record.heat === "number" && Number.isFinite(record.heat)
+									? Math.max(0, Math.trunc(record.heat))
+									: 0,
+							createdAt: typeof record.createdAt === "string" ? record.createdAt : "",
+							updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : "",
+						},
+					];
+				});
 			}
 		}
 	} catch {
@@ -53,7 +91,7 @@ function rebuildSceneIndex(paths: StoragePaths): SceneIndexEntry[] {
 	const entries: SceneIndexEntry[] = [];
 	for (const file of listSceneFiles(paths)) {
 		try {
-			const meta = parseSceneMeta(readFileSync(join(paths.sceneBlocksDir, file), "utf8"));
+			const meta = parseSceneMeta(readFileSync(sceneTarget(paths, file), "utf8"));
 			entries.push({
 				file,
 				summary: meta.summary,
@@ -77,7 +115,7 @@ function parseSceneMeta(raw: string): { summary: string; heat: number; created: 
 	}
 	const heat = Number.parseInt(fields.get("heat") ?? "0", 10);
 	return {
-		summary: fields.get("summary") ?? "",
+		summary: sanitizeUntrustedText(fields.get("summary") ?? "", { maxChars: MAX_SCENE_SUMMARY_CHARS }),
 		heat: Number.isFinite(heat) ? Math.max(0, heat) : 0,
 		created: fields.get("created") ?? "",
 		updated: fields.get("updated") ?? "",
@@ -87,13 +125,27 @@ function parseSceneMeta(raw: string): { summary: string; heat: number; created: 
 /** Atomic index write: a crash mid-write cannot corrupt the previous index. */
 export function writeSceneIndex(paths: StoragePaths, entries: readonly SceneIndexEntry[]): void {
 	mkdirSync(paths.sceneBlocksDir, { recursive: true });
+	const safeEntries = entries.flatMap((entry) => {
+		const file = validSceneFile(entry.file);
+		if (!file) return [];
+		return [
+			{
+				...entry,
+				file,
+				summary: sanitizeUntrustedText(entry.summary, { maxChars: MAX_SCENE_SUMMARY_CHARS }),
+				heat: Math.max(0, Math.trunc(entry.heat)),
+			},
+		];
+	});
 	const tmp = join(paths.sceneBlocksDir, "scene_index.json.tmp");
-	writeFileSync(tmp, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
+	writeFileSync(tmp, `${JSON.stringify(safeEntries, null, 2)}\n`, "utf8");
 	renameSync(tmp, paths.sceneIndexFile);
 }
 
 export function readSceneFile(paths: StoragePaths, file: string): string | null {
-	const target = join(paths.sceneBlocksDir, basename(file));
+	const safeFile = validSceneFile(file);
+	if (!safeFile) return null;
+	const target = sceneTarget(paths, safeFile);
 	if (!existsSync(target)) return null;
 	try {
 		return readFileSync(target, "utf8");
@@ -105,7 +157,7 @@ export function readSceneFile(paths: StoragePaths, file: string): string | null 
 export function listSceneFiles(paths: StoragePaths): string[] {
 	if (!existsSync(paths.sceneBlocksDir)) return [];
 	return readdirSync(paths.sceneBlocksDir)
-		.filter((name) => name.endsWith(".md") && name !== "scene_index.json")
+		.filter((name) => name.endsWith(".md") && name !== "scene_index.json" && validSceneFile(name) === name)
 		.sort();
 }
 
@@ -125,29 +177,37 @@ export function applySceneOps(paths: StoragePaths, ops: readonly SceneOp[], logg
 	mkdirSync(paths.sceneBlocksDir, { recursive: true });
 	const index = new Map(readSceneIndex(paths).map((entry) => [entry.file, entry]));
 	const now = new Date().toISOString();
+	const touched = new Set<string>();
 	for (const op of ops) {
-		const file = normalizeSceneFileName(op.file);
-		if (!file || file === ".md" || file === "scene_index.json") continue;
+		const file = validSceneFile(op.file);
+		if (!file || touched.has(file)) {
+			if (!file) logger?.warn?.("[anta-agent] rejected unsafe scene file name");
+			continue;
+		}
+		touched.add(file);
 		try {
+			const target = sceneTarget(paths, file);
 			if (op.action === "delete") {
-				const target = join(paths.sceneBlocksDir, file);
 				if (existsSync(target)) rmSync(target);
 				index.delete(file);
 				continue;
 			}
-			const content = op.content?.trim();
+			const content = op.content
+				? sanitizeUntrustedText(op.content, { maxChars: MAX_SCENE_CONTENT_CHARS }).trim()
+				: "";
 			if (!content) continue;
 			if (content === DELETED_MARKER) {
-				const target = join(paths.sceneBlocksDir, file);
 				if (existsSync(target)) rmSync(target);
 				index.delete(file);
 				continue;
 			}
 			const existing = index.get(file);
-			writeFileSync(join(paths.sceneBlocksDir, file), `${content.trimEnd()}\n`, "utf8");
+			writeFileSync(target, `${content.trimEnd()}\n`, "utf8");
 			index.set(file, {
 				file,
-				summary: op.summary?.trim() || existing?.summary || "",
+				summary: sanitizeUntrustedText(op.summary?.trim() || existing?.summary || "", {
+					maxChars: MAX_SCENE_SUMMARY_CHARS,
+				}),
 				heat:
 					typeof op.heat === "number" && Number.isFinite(op.heat)
 						? Math.max(0, Math.trunc(op.heat))

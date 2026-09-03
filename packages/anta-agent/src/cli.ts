@@ -1,23 +1,27 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { main } from "@earendil-works/pi-coding-agent";
-import antaAgentExtension from "./anta-agent-extension.ts";
-import { configureHttpDispatcher } from "./http-dispatcher.ts";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-// Mirror the pi CLI startup so behavior is identical.
-process.title = "anta-agent";
-process.env.PI_CODING_AGENT = "true";
-process.env.AI_AGENT = "pi";
-process.emitWarning = (() => {}) as typeof process.emitWarning;
+const packageDir = dirname(dirname(fileURLToPath(import.meta.url)));
+const require = createRequire(import.meta.url);
+const codingAgentEntry = require.resolve("@earendil-works/pi-coding-agent");
+const codingAgentDir = dirname(dirname(codingAgentEntry));
+const codingAgentCli = join(codingAgentDir, "dist", "bundle", "cli.js");
+const extensionPath = join(packageDir, "dist", "anta-agent-extension.js");
+const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".anta-agent");
 
-// Configure undici's global dispatcher before provider SDKs issue requests.
-configureHttpDispatcher();
-
-// anta-agent is an independent product: config, auth, sessions, and memory
-// live under ~/.anta-agent unless the user points PI_CODING_AGENT_DIR elsewhere.
-process.env.PI_CODING_AGENT_DIR ??= join(homedir(), ".anta-agent");
-
-await main(process.argv.slice(2), {
-	extensionFactories: [{ name: "anta-agent-memory", factory: antaAgentExtension, hidden: true }],
+const result = spawnSync(process.execPath, [codingAgentCli, "-e", extensionPath, ...process.argv.slice(2)], {
+	stdio: "inherit",
+	env: {
+		...process.env,
+		PI_PACKAGE_DIR: packageDir,
+		PI_CODING_AGENT_DIR: agentDir,
+		"ANTA-AGENT_CODING_AGENT_DIR": agentDir,
+	},
 });
+
+if (result.error) throw result.error;
+process.exitCode = result.status ?? 1;

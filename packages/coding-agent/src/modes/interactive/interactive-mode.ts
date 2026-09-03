@@ -53,6 +53,7 @@ import {
 	getAgentDir,
 	getAuthPath,
 	getDebugLogPath,
+	getDisplayAppName,
 	getDocsPath,
 	VERSION,
 } from "../../config.ts";
@@ -95,7 +96,7 @@ import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
 import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
-import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
+import { getBuiltinSlashCommands } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
@@ -126,7 +127,7 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
-import { FooterComponent, formatTokens } from "./components/footer.ts";
+import { FooterComponent, type FooterLabels, formatTokens } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { createMermaidMarkdownTransformer } from "./components/mermaid.ts";
@@ -259,7 +260,7 @@ export function formatResumeCommand(sessionManager: SessionManager): string | un
 	const sessionFile = sessionManager.getSessionFile();
 	if (!sessionFile || !fs.existsSync(sessionFile)) return undefined;
 
-	const args = [APP_NAME];
+	const args = [getDisplayAppName()];
 	if (!sessionManager.usesDefaultSessionDir()) {
 		args.push("--session-dir", quoteIfNeeded(sessionManager.getSessionDir()));
 	}
@@ -334,6 +335,10 @@ function formatLoginProviderCompletionDescription(provider: LoginProviderComplet
  * Options for InteractiveMode initialization.
  */
 export interface InteractiveModeOptions {
+	/** Optional presentation-only product branding; defaults to pi constants. */
+	branding?: { name?: string; title?: string; version?: string };
+	/** Optional footer labels; defaults to pi's compact labels. */
+	footerLabels?: Partial<FooterLabels>;
 	/** Providers that were migrated to auth.json (shows warning) */
 	migratedProviders?: string[];
 	/** Diagnostics collected before the interactive TUI was initialized. */
@@ -577,7 +582,7 @@ export class InteractiveMode {
 			await this.rebindCurrentSession({ renderBeforeBind: true });
 			await this.themeController.applyFromSettings();
 		});
-		this.version = VERSION;
+		this.version = options.branding?.version ?? VERSION;
 		this.renderer = createInteractiveTui({
 			tuiMode,
 			showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
@@ -610,7 +615,7 @@ export class InteractiveMode {
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
-		this.footer = new FooterComponent(this.session, this.footerDataProvider);
+		this.footer = new FooterComponent(this.session, this.footerDataProvider, options.footerLabels);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerContainer = new Container();
 		this.footerContainer.addChild(this.footer);
@@ -663,7 +668,7 @@ export class InteractiveMode {
 	}
 
 	private getBuiltInCommandConflictDiagnostics(extensionRunner: ExtensionRunner): ResourceDiagnostic[] {
-		const builtinNames = new Set(BUILTIN_SLASH_COMMANDS.map((command) => command.name));
+		const builtinNames = new Set(getBuiltinSlashCommands().map((command) => command.name));
 		return extensionRunner
 			.getRegisteredCommands()
 			.filter((command) => builtinNames.has(command.name))
@@ -679,7 +684,7 @@ export class InteractiveMode {
 
 	private createBaseAutocompleteProvider(): AutocompleteProvider {
 		// Define commands for autocomplete
-		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
+		const slashCommands: SlashCommand[] = getBuiltinSlashCommands().map((command) => ({
 			name: command.name,
 			description: command.description,
 			...(command.argumentHint && { argumentHint: command.argumentHint }),
@@ -961,7 +966,8 @@ export class InteractiveMode {
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
-			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
+			const displayName = this.options.branding?.name ?? APP_NAME;
+			const logo = theme.bold(theme.fg("accent", displayName)) + theme.fg("dim", ` v${this.version}`);
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
@@ -1000,7 +1006,7 @@ export class InteractiveMode {
 			);
 			const onboarding = theme.fg(
 				"dim",
-				`Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.`,
+				`${displayName} can explain its own features and look up its docs. Ask it how to use or extend ${displayName}.`,
 			);
 			this.builtInHeader = new ExpandableText(
 				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
@@ -1071,10 +1077,11 @@ export class InteractiveMode {
 	private updateTerminalTitle(): void {
 		const cwdBasename = path.basename(this.sessionManager.getCwd());
 		const sessionName = this.sessionManager.getSessionName();
+		const displayTitle = this.options.branding?.title ?? APP_TITLE;
 		if (sessionName) {
-			this.ui.terminal.setTitle(`${APP_TITLE} - ${sessionName} - ${cwdBasename}`);
+			this.ui.terminal.setTitle(`${displayTitle} - ${sessionName} - ${cwdBasename}`);
 		} else {
-			this.ui.terminal.setTitle(`${APP_TITLE} - ${cwdBasename}`);
+			this.ui.terminal.setTitle(`${displayTitle} - ${cwdBasename}`);
 		}
 	}
 
@@ -4011,7 +4018,7 @@ export class InteractiveMode {
 		try {
 			this.ui.stop();
 		} catch {}
-		console.error(`${APP_NAME} exiting due to uncaughtException:`);
+		console.error(`${getDisplayAppName()} exiting due to uncaughtException:`);
 		console.error(error);
 		process.exit(1);
 	}
@@ -4268,7 +4275,7 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(release: LatestPiRelease): void {
-		const action = theme.fg("accent", `${APP_NAME} update`);
+		const action = theme.fg("accent", `${getDisplayAppName()} update`);
 		const updateInstruction = theme.fg("muted", `New version ${release.version} is available. Run `) + action;
 		const changelogUrl = "https://pi.dev/changelog";
 		const changelogLink = getCapabilities().hyperlinks
@@ -4297,7 +4304,7 @@ export class InteractiveMode {
 	}
 
 	showPackageUpdateNotification(packages: string[]): void {
-		const action = theme.fg("accent", `${APP_NAME} update --extensions`);
+		const action = theme.fg("accent", `${getDisplayAppName()} update --extensions`);
 		const updateInstruction = theme.fg("muted", "Package updates are available. Run ") + action;
 		const packageLines = packages.map((pkg) => `- ${pkg}`).join("\n");
 
@@ -4957,7 +4964,7 @@ export class InteractiveMode {
 					trustStore.setMany(selection.updates);
 					done();
 					this.showStatus(
-						`Saved trust decision: ${selection.trusted ? "trusted" : "untrusted"}. Restart ${APP_NAME} for this to take effect.`,
+						`Saved trust decision: ${selection.trusted ? "trusted" : "untrusted"}. Restart ${getDisplayAppName()} for this to take effect.`,
 					);
 				},
 				onCancel: () => {
@@ -5744,7 +5751,7 @@ export class InteractiveMode {
 			`${providerOption.name} setup`,
 		);
 		dialog.showInfo(
-			`${providerOption.method?.name ?? "Authentication"} is configured outside ${APP_NAME}.`,
+			`${providerOption.method?.name ?? "Authentication"} is configured outside ${getDisplayAppName()}.`,
 			[],
 			true,
 		);
