@@ -1,23 +1,23 @@
 # anta-agent
 
-A coding agent with built-in four-layer memory, built on the [pi](https://github.com/earendil-works/pi) base.
+A coding agent with built-in four-layer memory.
 
-`anta-agent` works exactly like `pi` — same interaction, same commands, same modes — plus a memory engine that captures your conversations and work, distills them into reusable memory, and re-injects the relevant parts into future sessions. The more you use it, the less you have to re-explain yourself.
+anta-agent is a complete terminal coding agent — plus a memory engine that captures your conversations and work, distills them into reusable memory, and re-injects the relevant parts into future sessions. The more you use it, the less you have to re-explain yourself.
 
 ## Quick start
 
 ```bash
 npm install -g anta-agent
-at                 # first run asks you to configure a model/API key, like pi
+at                 # first run asks you to configure a model/API key
 ```
 
-All data lives in `~/.anta-agent`, independent of any existing pi installation.
+All data lives in `~/.anta-agent`, isolated from any other tool.
 
 ## What you get
 
 ### A full coding agent
 
-anta-agent inherits the complete pi base: multi-provider models (Anthropic, OpenAI, Google, Bedrock, and more, plus a built-in llama.cpp provider for local models), the standard tool set (read, bash, edit, write, grep, find, ls), interactive TUI with session tree and compaction, print/RPC/JSON modes for scripting, an extension API, skills, prompt templates, and themes.
+anta-agent ships as a full coding agent: multi-provider models (Anthropic, OpenAI, Google, Bedrock, and more, plus a built-in llama.cpp provider for local models), the standard tool set (read, bash, edit, write, grep, find, ls), interactive TUI with session tree and compaction, print/RPC/JSON modes for scripting, an extension API, skills, prompt templates, and themes.
 
 ### Four-layer memory (the anta-agent part)
 
@@ -50,7 +50,7 @@ anta-agent inherits the complete pi base: multi-provider models (Anthropic, Open
 ```
 ~/.anta-agent/
   auth.json          provider credentials
-  settings.json      settings (pi format)
+  settings.json      settings
   sessions/          session transcripts
   memory/
     memory.db        SQLite: conversations, memories, FTS + vector indexes
@@ -97,11 +97,11 @@ Tune the engine in `~/.anta-agent/memory.json` (all keys optional; defaults show
 - Memory distillation uses your configured model and consumes tokens in the background. Extraction, deduplication, scene consolidation, persona generation, and recall may send relevant conversation or memory text to that configured model provider. Local SQLite, JSONL, scene, and persona files are not sent to any additional service by anta-agent.
 - With `embedding.provider: "openai"`, embedding text is also sent to the configured embedding endpoint. With `"none"`, no embedding request is made.
 - L0 conversations are appended to daily JSONL recovery logs and projected into SQLite/FTS for search. Startup replays valid JSONL rows so a damaged or rebuilt SQLite projection can recover.
-- Session identity uses Pi's stable session ID for request association and the session file path only as the local transcript key. Working directory is metadata, not a cross-session identity.
+- Session identity uses a stable session ID for request association and the session file path only as the local transcript key. Working directory is metadata, not a cross-session identity.
 - Shutdown stops new memory work and waits for pending capture/pipeline operations before closing SQLite. If a provider ignores cancellation, close is deferred rather than closing the database underneath an active operation.
 - Memory content is treated as untrusted reference data. Known memory wrapper tags, control characters, invalid surrogate code units, unsafe scene paths, and oversized fields are sanitized or rejected before persistence/injection.
 - anta-agent is a local single-process memory integration. TencentDB-Agent-Memory's remote Proxy, Knowledge service, multi-tenant ACL, and distributed worker features are not part of this package; a future remote backend should connect through the host-neutral facade rather than changing the local storage contract.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE). Built on [pi](https://github.com/earendil-works/pi) by Earendil Works.
+MIT — see [LICENSE](./LICENSE). Memory engine design ported from TencentDB-Agent-Memory.

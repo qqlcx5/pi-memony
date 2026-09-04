@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07111f" />
+  <title>anta-agent · 长期记忆出厂内置的编码 Agent</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: "#07111f",
+            panel: "#0d1a2b",
+            panel2: "#10233a",
+            line: "#203650",
+            cyanx: "#55d6ff",
+            mint: "#7ef0c1",
+            violetx: "#9d8cff",
+            amberx: "#ffc979",
+            dangerx: "#ff8d9d"
+          },
+          fontFamily: {
+            sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Microsoft YaHei", "sans-serif"],
+            mono: ["JetBrains Mono", "SFMono-Regular", "Consolas", "Liberation Mono", "monospace"]
+          },
+          boxShadow: {
+            glow: "0 0 0 1px rgba(85,214,255,.12), 0 20px 80px rgba(0,0,0,.35)",
+            cyan: "0 0 30px rgba(85,214,255,.16)"
+          },
+          backgroundImage: {
+            grid: "linear-gradient(rgba(85,214,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(85,214,255,.045) 1px, transparent 1px)"
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    html { scroll-behavior: smooth; }
+    body {
+      background:
+        radial-gradient(circle at 70% -10%, rgba(48, 119, 176, .2), transparent 35rem),
+        radial-gradient(circle at 0% 30%, rgba(75, 54, 154, .11), transparent 28rem),
+        #07111f;
+    }
+    .gradient-text {
+      background: linear-gradient(100deg, #fff 5%, #55d6ff 48%, #7ef0c1 95%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .gradient-border {
+      position: relative;
+      background: linear-gradient(#0d1a2b, #0d1a2b) padding-box,
+                  linear-gradient(135deg, rgba(85,214,255,.7), rgba(157,140,255,.18), rgba(126,240,193,.55)) border-box;
+      border: 1px solid transparent;
+    }
+    .noise {
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E");
+    }
+    .scanline { background: linear-gradient(180deg, transparent 0%, rgba(85,214,255,.07) 50%, transparent 100%); }
+    .timeline-line::before {
+      content: "";
+      position: absolute;
+      left: 1rem;
+      top: 2rem;
+      bottom: 2rem;
+      width: 1px;
+      background: linear-gradient(#55d6ff, #9d8cff, #7ef0c1);
+      opacity: .4;
+    }
+    .code-key { color: #7ef0c1; }
+    .code-string { color: #ffc979; }
+    .code-comment { color: #66829f; }
+    .code-fn { color: #55d6ff; }
+    .reveal { animation: reveal .7s ease both; }
+    @keyframes reveal { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .float { animation: float 5s ease-in-out infinite; }
+    @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    ::selection { background: rgba(85,214,255,.25); }
+  </style>
+</head>
+
+<body class="text-slate-200 font-sans antialiased">
+  <div id="app">
+    <!-- top announcement -->
+    <div class="border-b border-cyanx/10 bg-cyanx/[.04]">
+      <div class="mx-auto flex max-w-7xl items-center justify-center gap-3 px-5 py-2 text-xs text-slate-400">
+        <span class="rounded-full border border-mint/20 bg-mint/10 px-2 py-0.5 font-mono text-[10px] text-mint">v0.84.9</span>
+        <span>MIT License · Node ≥ 22.19</span>
+        <a href="#architecture" class="hidden text-cyanx transition hover:text-white sm:inline-flex">查看四层架构 <i data-lucide="arrow-up-right" class="ml-1 h-3 w-3"></i></a>
+      </div>
+    </div>
+
+    <!-- navbar -->
+    <header class="sticky top-0 z-50 border-b border-white/[.06] bg-ink/75 backdrop-blur-xl">
+      <nav class="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
+        <a href="#" class="flex items-center gap-3">
+          <div class="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyanx to-violetx shadow-cyan">
+            <span class="font-mono text-lg font-black text-ink">a</span>
+            <span class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-mint"></span>
+          </div>
+          <div>
+            <div class="text-[15px] font-semibold tracking-tight text-white">anta-agent</div>
+            <div class="font-mono text-[9px] uppercase tracking-[.2em] text-slate-500">memory-native coding agent</div>
+          </div>
+        </a>
+
+        <div class="hidden items-center gap-7 text-sm text-slate-400 md:flex">
+          <a href="#capabilities" class="transition hover:text-white">能力</a>
+          <a href="#architecture" class="transition hover:text-white">架构</a>
+          <a href="#comparison" class="transition hover:text-white">对照</a>
+          <a href="#honesty" class="transition hover:text-white">诚实评估</a>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <a href="#quickstart" class="hidden rounded-lg border border-line px-3 py-2 text-xs text-slate-300 transition hover:border-cyanx/50 hover:text-white sm:inline-flex">
+            快速开始
+          </a>
+          <a href="https://github.com/qqlcx5/pi-memony" target="_blank" class="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-ink transition hover:bg-cyanx">
+            GitHub
+          </a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <!-- hero -->
+      <section class="relative overflow-hidden">
+        <div class="pointer-events-none absolute inset-0 bg-grid bg-[size:48px_48px] opacity-40 [mask-image:linear-gradient(to_bottom,black,transparent_75%)]"></div>
+        <div class="pointer-events-none absolute left-1/2 top-20 h-96 w-96 -translate-x-1/2 rounded-full bg-cyanx/10 blur-[120px]"></div>
+
+        <div class="relative mx-auto grid max-w-7xl gap-14 px-5 pb-24 pt-20 lg:grid-cols-[1.05fr_.95fr] lg:items-center lg:px-8 lg:pb-32 lg:pt-28">
+          <div class="reveal">
+            <div class="mb-7 inline-flex items-center gap-2 rounded-full border border-cyanx/20 bg-cyanx/[.07] px-3 py-1.5 text-xs text-cyanx">
+              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-mint"></span>
+              Long-term memory, built in
+              <i data-lucide="sparkles" class="h-3.5 w-3.5"></i>
+            </div>
+
+            <h1 class="max-w-3xl text-5xl font-bold leading-[1.06] tracking-[-.045em] text-white sm:text-6xl lg:text-7xl">
+              让编码 Agent
+              <br />
+              <span class="gradient-text">越用越懂你</span>
+            </h1>
+
+            <p class="mt-7 max-w-xl text-base leading-8 text-slate-400 sm:text-lg">
+              anta-agent 是一台长期记忆出厂内置的开源编码 Agent。
+              终端 TUI、40 家模型供应商、全量工具集、会话树，
+              加上一套不会阻塞当前回合的四层自动记忆引擎。
+            </p>
+
+            <div class="mt-9 flex flex-wrap items-center gap-3">
+              <a href="#quickstart" class="group inline-flex items-center gap-2 rounded-xl bg-cyanx px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white">
+                <i data-lucide="terminal" class="h-4 w-4"></i>
+                立即开始
+                <i data-lucide="arrow-right" class="h-4 w-4 transition group-hover:translate-x-1"></i>
+              </a>
+              <a href="#architecture" class="inline-flex items-center gap-2 rounded-xl border border-line bg-white/[.03] px-5 py-3 text-sm font-medium text-slate-200 transition hover:border-cyanx/40 hover:bg-white/[.06]">
+                了解记忆引擎
+                <i data-lucide="layers-3" class="h-4 w-4 text-cyanx"></i>
+              </a>
+            </div>
+
+            <div class="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-xs text-slate-500">
+              <span class="flex items-center gap-2"><i data-lucide="check" class="h-3.5 w-3.5 text-mint"></i>MIT 开源</span>
+              <span class="flex items-center gap-2"><i data-lucide="check" class="h-3.5 w-3.5 text-mint"></i>数据全本地</span>
+              <span class="flex items-center gap-2"><i data-lucide="check" class="h-3.5 w-3.5 text-mint"></i>嵌入默认关闭</span>
+              <span class="flex items-center gap-2"><i data-lucide="check" class="h-3.5 w-3.5 text-mint"></i>记忆可一键关闭</span>
+            </div>
+          </div>
+
+          <!-- terminal visual -->
+          <div class="relative reveal lg:pl-5" style="animation-delay:.12s">
+            <div class="absolute -inset-8 rounded-full bg-cyanx/[.04] blur-3xl"></div>
+            <div class="gradient-border noise relative overflow-hidden rounded-2xl shadow-glow">
+              <div class="flex items-center justify-between border-b border-line/70 bg-white/[.025] px-4 py-3">
+                <div class="flex gap-1.5">
+                  <span class="h-2.5 w-2.5 rounded-full bg-dangerx/80"></span>
+                  <span class="h-2.5 w-2.5 rounded-full bg-amberx/80"></span>
+                  <span class="h-2.5 w-2.5 rounded-full bg-mint/80"></span>
+                </div>
+                <span class="font-mono text-[10px] text-slate-600">~/projects/anta-agent</span>
+                <span class="flex items-center gap-1.5 text-[10px] text-mint"><span class="h-1.5 w-1.5 rounded-full bg-mint"></span>memory online</span>
+              </div>
+              <div class="scanline pointer-events-none absolute inset-x-0 top-16 h-16 opacity-40"></div>
+              <div class="space-y-4 p-5 font-mono text-[11px] leading-6 sm:p-7 sm:text-xs">
+                <div><span class="text-mint">❯</span> <span class="text-white">at</span> <span class="text-slate-500">--model claude-sonnet-4</span></div>
+                <div class="border-l border-cyanx/30 pl-4 text-slate-300">
+                  <span class="text-cyanx">anta-agent</span> <span class="text-slate-500">· session resumed</span><br />
+                  <span class="text-slate-500">记忆范围：</span><span class="text-mint">project / anta-agent</span><br />
+                  <span class="text-slate-500">已加载：</span><span class="text-white">12 条原子记忆</span><span class="text-slate-600"> · </span><span class="text-white">3 个场景</span>
+                </div>
+                <div><span class="text-mint">❯</span> <span class="text-white">修复 memory pipeline 的崩溃恢复问题</span></div>
+                <div class="rounded-lg border border-violetx/20 bg-violetx/[.06] p-3 text-slate-300">
+                  <div class="mb-2 flex items-center gap-2 text-violetx"><i data-lucide="brain-circuit" class="h-3.5 w-3.5"></i> relevant-memories</div>
+                  <div class="text-[10px] leading-5 text-slate-400">
+                    · JSONL 必须先于 SQLite 写入，作为唯一事实源<br />
+                    · checkpoint 使用 tmp + rename 保证原子性<br />
+                    · 主写失败时水位线不得推进
+                  </div>
+                </div>
+                <div class="text-slate-300">我会先检查恢复路径，再补充对抗性边界测试。</div>
+                <div class="flex items-center justify-between border-t border-line/60 pt-3 text-[10px] text-slate-500">
+                  <span>tokens 8.4k / 32k</span>
+                  <span>cache hit 82%</span>
+                  <span>$0.041</span>
+                  <span class="text-mint">memory · idle</span>
+                </div>
+              </div>
+            </div>
+            <div class="float absolute -bottom-5 -left-4 hidden rounded-xl border border-mint/20 bg-panel/95 px-4 py-3 shadow-xl backdrop-blur sm:block">
+              <div class="flex items-center gap-3">
+                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-mint/10 text-mint"><i data-lucide="database" class="h-4 w-4"></i></div>
+                <div><div class="text-xs font-medium text-white">Local-first memory</div><div class="text-[10px] text-slate-500">~/.anta-agent · zero external calls</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- capability metrics -->
+      <section id="capabilities" class="border-y border-white/[.06] bg-white/[.018]">
+        <div class="mx-auto grid max-w-7xl grid-cols-2 divide-x divide-y divide-white/[.06] px-5 sm:grid-cols-4 sm:divide-y-0 lg:px-8">
+          <div v-for="metric in metrics" :key="metric.label" class="px-4 py-7 sm:px-6 lg:py-9">
+            <div class="mb-2 flex items-center gap-2 text-slate-500"><i :data-lucide="metric.icon" class="h-4 w-4 text-cyanx"></i><span class="text-xs">{{ metric.label }}</span></div>
+            <div class="text-2xl font-bold tracking-tight text-white">{{ metric.value }}</div>
+            <div class="mt-1 text-[11px] text-slate-500">{{ metric.note }}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- value proposition -->
+      <section class="mx-auto max-w-7xl px-5 py-24 lg:px-8">
+        <div class="mb-12 max-w-2xl">
+          <div class="mb-3 font-mono text-xs uppercase tracking-[.2em] text-cyanx">Why anta-agent</div>
+          <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">不是外挂记忆，<br /><span class="text-slate-400">而是记忆原生的底盘。</span></h2>
+        </div>
+        <div class="grid gap-4 md:grid-cols-3">
+          <article v-for="item in valueCards" :key="item.title" class="group rounded-2xl border border-line/80 bg-panel/60 p-6 transition hover:-translate-y-1 hover:border-cyanx/40 hover:bg-panel">
+            <div :class="item.iconBg" class="mb-5 flex h-11 w-11 items-center justify-center rounded-xl">
+              <i :data-lucide="item.icon" class="h-5 w-5"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-white">{{ item.title }}</h3>
+            <p class="mt-3 text-sm leading-7 text-slate-400">{{ item.description }}</p>
+            <div class="mt-5 flex items-center gap-2 text-xs text-slate-500"><span class="h-px w-6 bg-cyanx/40"></span>{{ item.tag }}</div>
+          </article>
+        </div>
+      </section>
+
+      <!-- four layer architecture -->
+      <section id="architecture" class="relative overflow-hidden border-y border-white/[.06] bg-panel/35">
+        <div class="pointer-events-none absolute right-0 top-0 h-full w-1/2 bg-grid bg-[size:36px_36px] opacity-30 [mask-image:linear-gradient(to_left,black,transparent)]"></div>
+        <div class="relative mx-auto max-w-7xl px-5 py-24 lg:px-8">
+          <div class="grid gap-14 lg:grid-cols-[.75fr_1.25fr]">
+            <div>
+              <div class="mb-3 font-mono text-xs uppercase tracking-[.2em] text-mint">Memory engine</div>
+              <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">四层自动记忆<br /><span class="gradient-text">从对话到方法论</span></h2>
+              <p class="mt-5 max-w-md text-sm leading-7 text-slate-400">
+                每一次回合都先被可靠记录，再被后台蒸馏、去重、整合与总结。注入动态记忆与稳定上下文分开处理，优先保护 provider prompt cache。
+              </p>
+              <div class="mt-8 rounded-xl border border-mint/15 bg-mint/[.04] p-4">
+                <div class="flex gap-3">
+                  <i data-lucide="shield-check" class="mt-0.5 h-4 w-4 shrink-0 text-mint"></i>
+                  <p class="text-xs leading-6 text-slate-400">核心不变量：capture / recall / search <span class="text-mint">never throws</span>。记忆系统任何故障，都不允许杀掉宿主会话。</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="relative timeline-line space-y-4">
+              <article v-for="layer in layers" :key="layer.id" class="relative pl-10">
+                <div :class="layer.dot" class="absolute left-[9px] top-5 z-10 h-3.5 w-3.5 rounded-full border-4 border-ink"></div>
+                <div class="group rounded-2xl border border-line/80 bg-panel/80 p-5 transition hover:border-cyanx/40">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                      <span :class="layer.badge" class="rounded-md px-2 py-1 font-mono text-[10px] font-bold">{{ layer.id }}</span>
+                      <h3 class="font-semibold text-white">{{ layer.name }}</h3>
+                    </div>
+                    <span class="rounded-full border border-white/10 px-2 py-1 text-[10px] text-slate-500">{{ layer.schedule }}</span>
+                  </div>
+                  <p class="mt-3 text-sm leading-6 text-slate-400">{{ layer.description }}</p>
+                  <div class="mt-4 flex flex-wrap gap-2">
+                    <span v-for="tag in layer.tags" :key="tag" class="rounded-md bg-white/[.04] px-2 py-1 font-mono text-[10px] text-slate-500">{{ tag }}</span>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="mt-16 rounded-2xl border border-line bg-ink/60 p-5 font-mono text-[11px] leading-7 text-slate-500 sm:p-7 sm:text-xs">
+            <div class="mb-3 flex items-center justify-between">
+              <span class="text-slate-400">memory-pipeline.flow</span>
+              <span class="text-[10px] text-mint">append-only source → rebuildable projections</span>
+            </div>
+            <div class="overflow-x-auto whitespace-nowrap">
+              <span class="text-cyanx">round_end</span>
+              <span class="text-slate-700"> ──▶ </span>
+              <span class="text-white">L0 conversation</span>
+              <span class="text-slate-700"> ── every 5 rounds ──▶ </span>
+              <span class="text-mint">L1 atomic memory</span>
+              <span class="text-slate-700"> ── 10s delay ──▶ </span>
+              <span class="text-violetx">L2 scene blocks</span>
+              <span class="text-slate-700"> ── every 50 records ──▶ </span>
+              <span class="text-amberx">L3 persona</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- feature matrix -->
+      <section class="mx-auto max-w-7xl px-5 py-24 lg:px-8">
+        <div class="mb-10 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+          <div>
+            <div class="mb-3 font-mono text-xs uppercase tracking-[.2em] text-cyanx">Built for the terminal</div>
+            <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">完整的 Agent 外壳</h2>
+          </div>
+          <p class="max-w-md text-sm leading-6 text-slate-500">内核保持极小，能力通过扩展系统接入；唯一预装的大件，是可以一键关闭的长期记忆。</p>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div v-for="feature in features" :key="feature.title" class="rounded-xl border border-line/70 bg-panel/50 p-5">
+            <i :data-lucide="feature.icon" class="mb-5 h-5 w-5 text-cyanx"></i>
+            <h3 class="text-sm font-semibold text-white">{{ feature.title }}</h3>
+            <p class="mt-2 text-xs leading-6 text-slate-500">{{ feature.text }}</p>
+          </div>
+        </div>
+
+        <div class="mt-8 grid gap-4 lg:grid-cols-2">
+          <div class="rounded-2xl border border-line bg-panel/50 p-6">
+            <div class="mb-5 flex items-center justify-between">
+              <h3 class="font-semibold text-white">支持的交互模式</h3>
+              <i data-lucide="command" class="h-4 w-4 text-slate-500"></i>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <span v-for="mode in modes" :key="mode" class="rounded-lg border border-cyanx/15 bg-cyanx/[.05] px-3 py-2 font-mono text-xs text-cyanx">{{ mode }}</span>
+            </div>
+          </div>
+          <div class="rounded-2xl border border-line bg-panel/50 p-6">
+            <div class="mb-5 flex items-center justify-between">
+              <h3 class="font-semibold text-white">内置工具集</h3>
+              <i data-lucide="wrench" class="h-4 w-4 text-slate-500"></i>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <span v-for="tool in tools" :key="tool" class="rounded-lg border border-white/10 bg-white/[.03] px-3 py-2 font-mono text-xs text-slate-400">{{ tool }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- retrieval -->
+      <section class="border-y border-white/[.06] bg-white/[.018]">
+        <div class="mx-auto max-w-7xl px-5 py-24 lg:px-8">
+          <div class="grid items-center gap-14 lg:grid-cols-2">
+            <div>
+              <div class="mb-3 font-mono text-xs uppercase tracking-[.2em] text-violetx">Recall & injection</div>
+              <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">把相关的记忆<br /><span class="text-slate-400">放在正确的位置</span></h2>
+              <p class="mt-5 text-sm leading-7 text-slate-400">混合检索将 FTS5 trigram BM25 与内存余弦检索通过 RRF 融合。动态内容贴近最后一条用户消息，稳定内容放在系统提示尾部。</p>
+              <div class="mt-8 space-y-3">
+                <div v-for="item in injectionItems" :key="item.title" class="flex gap-3 rounded-xl border border-line/70 bg-panel/60 p-4">
+                  <div :class="item.color" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"><i :data-lucide="item.icon" class="h-4 w-4"></i></div>
+                  <div><div class="text-sm font-medium text-white">{{ item.title }}</div><div class="mt-1 text-xs leading-5 text-slate-500">{{ item.text }}</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-2xl border border-line bg-panel p-5 shadow-glow sm:p-7">
+              <div class="mb-5 flex items-center justify-between">
+                <span class="font-mono text-xs text-slate-500">recall-context.ts</span>
+                <span class="rounded-full bg-mint/10 px-2 py-1 text-[10px] text-mint">cache-friendly</span>
+              </div>
+              <div class="space-y-4 font-mono text-[11px] leading-6 sm:text-xs">
+                <div class="rounded-lg border border-cyanx/15 bg-cyanx/[.04] p-4">
+                  <div class="mb-2 text-cyanx">&lt;relevant-memories&gt;</div>
+                  <div class="pl-3 text-slate-400">最多 5 条 · 每轮动态变化</div>
+                  <div class="pl-3 text-slate-400">不触碰 system prompt</div>
+                  <div class="text-cyanx">&lt;/relevant-memories&gt;</div>
+                </div>
+                <div class="flex justify-center text-slate-700"><i data-lucide="plus" class="h-4 w-4"></i></div>
+                <div class="rounded-lg border border-violetx/15 bg-violetx/[.04] p-4">
+                  <div class="mb-2 text-violetx">&lt;user-persona&gt;</div>
+                  <div class="pl-3 text-slate-400">persona · scene navigation</div>
+                  <div class="pl-3 text-slate-400">memory tools guide · 稳定注入</div>
+                  <div class="text-violetx">&lt;/user-persona&gt;</div>
+                </div>
+                <div class="flex items-center justify-between border-t border-line pt-4 text-[10px] text-slate-500">
+                  <span>RRF k = 60</span><span>embedding: none</span><span class="text-mint">provider cache preserved</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- comparison -->
+      <section id="comparison" class="mx-auto max-w-7xl px-5 py-24 lg:px-8">
+        <div class="mb-10 max-w-2xl">
+          <div class="mb-3 font-mono text-xs uppercase tracking-[.2em] text-cyanx">Harness coordinate system</div>
+          <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">它选择了第三条路</h2>
+          <p class="mt-4 text-sm leading-7 text-slate-400">Claude Code 将能力做进产品，DSH 将一切做进插件树；anta-agent 选择「内核极小 + 记忆预装」。</p>
+        </div>
+
+        <div class="mb-5 flex flex-wrap gap-2">
+          <button v-for="tab in comparisonTabs" :key="tab.id" @click="activeTab = tab.id" :class="activeTab === tab.id ? 'border-cyanx/50 bg-cyanx/10 text-cyanx' : 'border-line bg-panel/40 text-slate-500'" class="rounded-lg border px-3 py-2 text-xs transition">
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <div class="overflow-hidden rounded-2xl border border-line bg-panel/50">
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[680px] border-collapse text-left text-xs">
+              <thead>
+                <tr class="border-b border-line bg-white/[.025] text-slate-500">
+                  <th class="px-5 py-4 font-medium">维度</th>
+                  <th class="px-5 py-4 font-medium">Claude Code</th>
+                  <th class="px-5 py-4 font-medium">DeepSeek harness</th>
+                  <th class="px-5 py-4 font-semibold text-cyanx">anta-agent</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in currentComparison" :key="row.dimension" class="border-b border-line/60 last:border-0">
+                  <td class="px-5 py-4 font-medium text-white">{{ row.dimension }}</td>
+                  <td class="px-5 py-4 leading-6 text-slate-500">{{ row.claude }}</td>
+                  <td class="px-5 py-4 leading-6 text-slate-500">{{ row.dsh }}</td>
+                  <td class="px-5 py-4 leading-6 text-slate-300"><span class="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-mint"></span>{{ row.anta }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- philosophy cards -->
+      <section class="mx-auto max-w-7xl px-5 pb-24 lg:px-8">
+        <div class="grid gap-4 lg:grid-cols-3">
+          <div v-for="principle in principles" :key="principle.number" class="rounded-2xl border border-line bg-panel/50 p-6">
+            <div class="mb-6 flex items-center justify-between">
+              <span class="font-mono text-3xl font-bold text-cyanx/30">{{ principle.number }}</span>
+              <i :data-lucide="principle.icon" class="h-5 w-5 text-slate-500"></i>
+            </div>
+            <h3 class="text-base font-semibold text-white">{{ principle.title }}</h3>
+            <p class="mt-3 text-sm leading-7 text-slate-500">{{ principle.text }}</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- honesty -->
+      <section id="honesty" class="border-y border-white/[.06] bg-panel/35">
+        <div class="mx-auto max-w-7xl px-5 py-24 lg:px-8">
+          <div class="grid gap-12 lg:grid-cols-[.8fr_1.2fr]">
+            <div>
+              <div class="mb-3 font-mono text-xs uppercase tracking-[.2em] text-amberx">Engineering honesty</div>
+              <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">不回避代价，<br /><span class="text-slate-400">只呈现真实边界。</span></h2>
+              <p class="mt-5 text-sm leading-7 text-slate-400">自动记忆不是免费的魔法。它的价值取决于使用频率、模型质量与个人工作流。以下判断均基于源码与当前产品状态。</p>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div v-for="risk in risks" :key="risk.title" class="rounded-xl border border-line/70 bg-panel/70 p-4">
+                <div class="mb-2 flex items-center gap-2">
+                  <i :data-lucide="risk.icon" :class="risk.iconClass" class="h-4 w-4"></i>
+                  <h3 class="text-sm font-medium text-white">{{ risk.title }}</h3>
+                  <span :class="risk.statusClass" class="ml-auto rounded-full px-2 py-0.5 text-[9px]">{{ risk.status }}</span>
+                </div>
+                <p class="text-xs leading-6 text-slate-500">{{ risk.text }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- local and toggle -->
+      <section class="mx-auto max-w-7xl px-5 py-24 lg:px-8">
+        <div class="grid gap-5 lg:grid-cols-5">
+          <div class="gradient-border rounded-2xl p-7 lg:col-span-3">
+            <div class="flex flex-col justify-between gap-8 sm:flex-row">
+              <div>
+                <div class="mb-3 flex items-center gap-2 text-mint"><i data-lucide="hard-drive" class="h-4 w-4"></i><span class="font-mono text-xs uppercase tracking-[.16em]">Your data stays yours</span></div>
+                <h2 class="text-2xl font-bold text-white">本地优先，默认零外发</h2>
+                <p class="mt-3 max-w-lg text-sm leading-7 text-slate-400">所有记忆独立存放于 <code class="rounded bg-white/10 px-1.5 py-0.5 font-mono text-xs text-cyanx">~/.anta-agent</code>。嵌入 provider 默认是 none，不产生嵌入网络调用；配置兼容端点后才会后台批量回填。</p>
+              </div>
+              <div class="shrink-0">
+                <div class="mb-2 text-[10px] uppercase tracking-wider text-slate-600">Memory switch</div>
+                <button @click="memoryEnabled = !memoryEnabled" class="flex items-center gap-3 rounded-xl border border-line bg-ink/50 px-3 py-2 transition hover:border-cyanx/40">
+                  <span :class="memoryEnabled ? 'bg-mint' : 'bg-slate-600'" class="relative h-5 w-9 rounded-full transition">
+                    <span :class="memoryEnabled ? 'translate-x-4' : 'translate-x-0.5'" class="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition"></span>
+                  </span>
+                  <span :class="memoryEnabled ? 'text-mint' : 'text-slate-500'" class="text-xs font-medium">{{ memoryEnabled ? 'enabled' : 'disabled' }}</span>
+                </button>
+              </div>
+            </div>
+            <div class="mt-8 grid gap-3 border-t border-line/70 pt-5 sm:grid-cols-3">
+              <div v-for="local in localFacts" :key="local.label">
+                <div class="font-mono text-xs text-slate-300">{{ local.value }}</div>
+                <div class="mt-1 text-[10px] text-slate-600">{{ local.label }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-2xl border border-line bg-panel/60 p-7 lg:col-span-2">
+            <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-violetx/10 text-violetx"><i data-lucide="route" class="h-5 w-5"></i></div>
+            <h3 class="text-lg font-semibold text-white">Host-neutral facade</h3>
+            <p class="mt-3 text-sm leading-7 text-slate-500">记忆核心只依赖单次文本补全的 <code class="font-mono text-xs text-violetx">LlmRunner</code> 接口。未来接入远程后端，也不改动本地存储契约。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- quickstart -->
+      <section id="quickstart" class="border-t border-white/[.06] bg-gradient-to-b from-cyanx/[.05] to-transparent">
+        <div class="mx-auto max-w-7xl px-5 py-24 lg:px-8">
+          <div class="mx-auto max-w-3xl text-center">
+            <div class="mb-3 font-mono text-xs uppercase tracking-[.2em] text-cyanx">Start in minutes</div>
+            <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">从一次终端会话开始积累</h2>
+            <p class="mt-4 text-sm leading-7 text-slate-400">记忆内置，但不强迫你使用。设置一行配置即可关闭全部记忆能力。</p>
+          </div>
+
+          <div class="mx-auto mt-10 max-w-3xl overflow-hidden rounded-2xl border border-line bg-ink shadow-glow">
+            <div class="flex items-center justify-between border-b border-line bg-white/[.025] px-5 py-3">
+              <span class="font-mono text-xs text-slate-500">terminal</span>
+              <button @click="copyInstall" class="flex items-center gap-1.5 text-[10px] text-slate-500 transition hover:text-cyanx"><i data-lucide="copy" class="h-3 w-3"></i>{{ copied ? '已复制' : '复制' }}</button>
+            </div>
+            <pre class="overflow-x-auto p-6 font-mono text-xs leading-7"><span class="text-mint"># 安装 Node ≥ 22.19 后</span>
+<span class="text-cyanx">npm</span> install -g anta-agent
+<span class="text-cyanx">at</span>
+
+<span class="text-mint"># 显式存入一条长期记忆</span>
+<span class="text-cyanx">/remember</span> 这个项目使用 JSONL 作为事实源，SQLite 是可重建投影
+
+<span class="text-mint"># 查看状态 / 跳转会话树</span>
+<span class="text-cyanx">/memory</span>
+<span class="text-cyanx">/tree</span></pre>
+          </div>
+
+          <div class="mt-8 flex flex-wrap justify-center gap-4 text-xs text-slate-500">
+            <span class="flex items-center gap-2"><i data-lucide="package-check" class="h-4 w-4 text-mint"></i>TypeScript 扩展 API</span>
+            <span class="flex items-center gap-2"><i data-lucide="refresh-cw" class="h-4 w-4 text-cyanx"></i>热重载</span>
+            <span class="flex items-center gap-2"><i data-lucide="file-code-2" class="h-4 w-4 text-violetx"></i>Skills / Prompt / Theme</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- target audience -->
+      <section class="mx-auto max-w-7xl px-5 pb-24 lg:px-8">
+        <div class="rounded-3xl border border-line bg-panel/70 p-7 sm:p-10">
+          <div class="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <div class="mb-3 font-mono text-xs uppercase tracking-[.2em] text-mint">Choose your harness</div>
+              <h2 class="text-2xl font-bold text-white sm:text-3xl">适合高频、多项目、重视数据主权的开发者</h2>
+              <p class="mt-4 max-w-2xl text-sm leading-7 text-slate-500">如果你想要「越用越懂你」的个人编码助手，并且愿意用少量后台 token 换取持续积累的上下文，anta-agent 会是自然的选择。</p>
+            </div>
+            <div class="flex flex-col gap-2 text-xs">
+              <div class="flex items-center gap-2 text-mint"><i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>多项目高频使用 → anta-agent</div>
+              <div class="flex items-center gap-2 text-slate-500"><i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>团队 / 多租户远程记忆 → TencentDB</div>
+              <div class="flex items-center gap-2 text-slate-500"><i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>只需要记忆 SDK → Mem0 类方案</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="border-t border-white/[.06]">
+      <div class="mx-auto flex max-w-7xl flex-col justify-between gap-5 px-5 py-8 text-xs text-slate-600 sm:flex-row sm:items-center lg:px-8">
+        <div class="flex items-center gap-3"><span class="font-mono text-slate-400">anta-agent</span><span>·</span><span>open source coding agent with memory</span></div>
+        <div class="flex items-center gap-5"><span>MIT License</span><span>v0.84.9</span><a href="#" class="transition hover:text-cyanx">返回顶部 ↑</a></div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script>
+    const { createApp, computed, nextTick } = Vue;
+
+    createApp({
+      data() {
+        return {
+          memoryEnabled: true,
+          copied: false,
+          activeTab: "six",
+          metrics: [
+            { icon: "bot", label: "模型供应商", value: "40 家", note: "云端 / OAuth / 本地模型" },
+            { icon: "layers-3", label: "记忆层级", value: "L0 → L3", note: "对话 · 原子 · 场景 · Persona" },
+            { icon: "terminal-square", label: "交互模式", value: "5 种", note: "TUI / print / JSON / RPC / SDK" },
+            { icon: "file-code-2", label: "核心源码", value: "~4.6K 行", note: "另有约 1.7K 行测试代码" }
+          ],
+          valueCards: [
+            { icon: "brain-circuit", iconBg: "bg-cyanx/10 text-cyanx", title: "记忆是底盘，不是插件", description: "从回合捕获、后台提取，到检索注入与可靠性协议，全链路出厂内置；想要普通编码 Agent 时，一行配置即可关闭。", tag: "memory-native" },
+            { icon: "database-zap", iconBg: "bg-mint/10 text-mint", title: "唯一事实源，可重建", description: "每日 JSONL 先写入，再投影到 SQLite、FTS、向量和场景索引。崩溃后可以从日志恢复，而不是相信一份黑盒状态。", tag: "source of truth" },
+            { icon: "gauge", iconBg: "bg-violetx/10 text-violetx", title: "为缓存友好而设计", description: "动态记忆贴最后一条用户消息，稳定 persona 与场景导航放在系统提示尾部，减少跨轮变化，保护 provider prompt cache。", tag: "cache-friendly" }
+          ],
+          layers: [
+            { id: "L0", name: "对话记录", schedule: "每轮同步捕获", dot: "bg-cyanx", badge: "bg-cyanx/10 text-cyanx", description: "保存每轮完整对话，失败或中止的回合会被剔除。每日 JSONL 是真相源，SQLite 仅作为检索投影。", tags: ["conversations/*.jsonl", "l0_conversations", "WAL"] },
+            { id: "L1", name: "原子记忆", schedule: "每 5 轮 / 空闲 600s", dot: "bg-mint", badge: "bg-mint/10 text-mint", description: "一次 LLM 调用完成情境切分与记忆提取，再批量执行 store / update / merge / skip 去重决策，允许跨类型合并。", tags: ["≤400 messages", "≤120k chars", "FTS5 trigram"] },
+            { id: "L2", name: "场景块", schedule: "L1 后延迟 10s", dot: "bg-violetx", badge: "bg-violetx/10 text-violetx", description: "将原子记忆整合成叙事式 Markdown 场景文档，通过 create / update / delete 操作维护，最多 15 个场景。", tags: ["scene_blocks/*.md", "≤12 ops", "snapshot ×10"] },
+            { id: "L3", name: "Persona / Doctrine", schedule: "每 50 条新记忆", dot: "bg-amberx", badge: "bg-amberx/10 text-amberx", description: "chat 模式生成 User Narrative Profile；code 模式生成 Operating Doctrine，将 SOP、原则、边界与反模式沉淀为稳定上下文。", tags: ["persona.md", "chat ≤2000 字", "code ≤1200 字"] }
+          ],
+          features: [
+            { icon: "box", title: "40 家 Provider", text: "Anthropic、OpenAI、Google、Bedrock，以及订阅 OAuth 与本地模型。" },
+            { icon: "git-branch", title: "会话树", text: "使用 /tree 跳转，/fork 分支，/compact 压缩；消息支持 steering 排队。" },
+            { icon: "languages", title: "中文 TUI 状态栏", text: "实时展示 token、缓存命中、费用与上下文占用。" },
+            { icon: "plug", title: "完整扩展 API", text: "约 30 个事件，支持注册工具、命令、快捷键与主题，支持热重载。" },
+            { icon: "search", title: "混合检索", text: "FTS5 trigram BM25 + 内存余弦暴力扫，RRF 融合，中英一发出结果。" },
+            { icon: "message-square-more", title: "记忆工具", text: "memory_search 与 conversation_search 内置，工具指南限制每轮合计 ≤3 次。" },
+            { icon: "shield", title: "安全边界", text: "持久化、注入、文件写入统一 sanitizeUntrustedText。" },
+            { icon: "power", title: "Fail-soft 生命周期", text: "记忆故障不影响会话；关机先 flush，超时则延迟关库。" }
+          ],
+          modes: ["interactive", "print", "JSON", "RPC", "SDK"],
+          tools: ["read", "bash", "edit", "write", "grep", "find", "ls", "powershell"],
+          injectionItems: [
+            { icon: "message-circle", color: "bg-cyanx/10 text-cyanx", title: "动态记忆 · relevant-memories", text: "默认最多 5 条，贴在最后一条用户消息附近，每轮随当前语境变化。" },
+            { icon: "bookmark", color: "bg-violetx/10 text-violetx", title: "稳定上下文 · persona / scenes", text: "追加到系统提示尾部，跨轮保持稳定，避免破坏供应商缓存。" },
+            { icon: "search-check", color: "bg-mint/10 text-mint", title: "按需兜底 · memory_search", text: "当注入不足时交给模型主动检索，工具指南硬限制调用次数。" }
+          ],
+          comparisonTabs: [
+            { id: "six", label: "六件套" },
+            { id: "seven", label: "DSH 七模型" },
+            { id: "memory", label: "记忆能力" }
+          ],
+          comparisonData: {
+            six: [
+              { dimension: "Rule 软约束", claude: "settings.json + CLAUDE.md", dsh: "profile → bundle → patch → overlay", anta: "AGENTS.md / SYSTEM.md，靠容器而非弹窗" },
+              { dimension: "Skill 知识包", claude: "Plugins 市场", dsh: "一切皆插件，按扩展点挂载", anta: "Skills 按需加载，系统提示只放描述" },
+              { dimension: "Sub-Agent", claude: "Plugin 一等公民", dsh: "能力接缝三角色", anta: "不内置，扩展或 tmux" },
+              { dimension: "长期记忆", claude: "手写 CLAUDE.md + 记忆目录", dsh: "事实源 + 投影", anta: "四层引擎出厂内置，可一键关闭" },
+              { dimension: "MCP", claude: "Plugin 一等公民", dsh: "不以此为中心", anta: "不内置，桥接或自写扩展" }
+            ],
+            seven: [
+              { dimension: "无特权内核", claude: "产品内置能力较重", dsh: "内核零特权", anta: "记忆是可关闭、不可卸载的特权大件" },
+              { dimension: "能力接缝三角色", claude: "依赖产品实现", dsh: "定义 + 提供者 + 消费者", anta: "LlmRunner / EmbeddingService 教科书式接缝" },
+              { dimension: "唯一事实源", claude: "文件为主", dsh: "日志可重建", anta: "JSONL 真相源，全部索引可重建" },
+              { dimension: "真边界校验", claude: "Hook 门控", dsh: "只在真边界校验", anta: "持久化 / 注入 / 文件写三处统一校验" },
+              { dimension: "显式默认", claude: "配置分散", dsh: "上层覆盖", anta: "parseAntaAgentConfig 集中 resolve + clamp" }
+            ],
+            memory: [
+              { dimension: "记忆形态", claude: "规则文件 + 目录", dsh: "事实源与投影", anta: "L0-L3 四层同源移植" },
+              { dimension: "写入方式", claude: "手写为主", dsh: "由插件决定", anta: "全自动，后台不阻塞回合" },
+              { dimension: "去重冲突", claude: "无", dsh: "能力可插拔", anta: "store / update / merge / skip" },
+              { dimension: "检索", claude: "文件全量注入", dsh: "由插件决定", anta: "FTS5 + 向量 RRF，本地单机" },
+              { dimension: "数据主权", claude: "云端能力为主", dsh: "取决于部署", anta: "~/.anta-agent，全本地，嵌入默认关闭" }
+            ]
+          },
+          principles: [
+            { number: "01", icon: "file-stack", title: "Model-visible means logged", text: "注入模型的每一句内容，都可以从记忆库、每日 JSONL 与审计日志重建。可见状态不应是不可追溯的黑盒。" },
+            { number: "02", icon: "route", title: "Host-neutral by design", text: "AntaAgent 是宿主无关 facade。适配器只翻译 MemoryScope，核心只认识 LlmRunner，不把宿主细节带进引擎。" },
+            { number: "03", icon: "triangle-alert", title: "部署者响亮，用户降级", text: "主写失败会阻止水位线推进并要求重试；对宿主会话则 fail-soft。可靠性边界按受众区分。" }
+          ],
+          risks: [
+            { icon: "coins", iconClass: "text-amberx", title: "蒸馏消耗 token", status: "成立", statusClass: "bg-amberx/10 text-amberx", text: "提取、去重、场景与 persona 共用会话模型，重度使用一天可能额外增加 10–20%。" },
+            { icon: "scale", iconClass: "text-amberx", title: "质量看模型脸色", status: "成立", statusClass: "bg-amberx/10 text-amberx", text: "质量契约主要依赖 prompt；小模型 JSON 输出不稳，虽有降级存储与重试兜底，垃圾记忆仍可能入库。" },
+            { icon: "languages", iconClass: "text-violetx", title: "中文 prompt 硬编码", status: "半成立", statusClass: "bg-violetx/10 text-violetx", text: "主体 prompt 使用中文，但要求输出跟随用户语言。非中文用户可用，只是固定 prompt token 偏高。" },
+            { icon: "copy", iconClass: "text-dangerx", title: "单机单进程", status: "成立", statusClass: "bg-dangerx/10 text-dangerx", text: "node:sqlite 单写者，两个 at 实例共用目录暂无并发保护；远程后端留给未来。" },
+            { icon: "rotate-ccw", iconClass: "text-violetx", title: "污染回滚不够直接", status: "半成立", statusClass: "bg-violetx/10 text-violetx", text: "有全量审计与备份，但暂无单条回滚命令，纠错需要手动处理或等待下一轮去重。" },
+            { icon: "scan-search", iconClass: "text-dangerx", title: "注入检测未接线", status: "成立", statusClass: "bg-dangerx/10 text-dangerx", text: "containsPromptInjection 已导出但生产路径未接线，当前防护依赖转义、截断与路径白名单。" }
+          ],
+          localFacts: [
+            { value: "JSONL → SQLite", label: "写入顺序" },
+            { value: "WAL + tmp/rename", label: "崩溃恢复" },
+            { value: "embedding: none", label: "默认网络行为" }
+          ]
+        }
+      },
+      computed: {
+        currentComparison() {
+          return this.comparisonData[this.activeTab];
+        }
+      },
+      methods: {
+        async copyInstall() {
+          try {
+            await navigator.clipboard.writeText("npm install -g anta-agent\nat");
+            this.copied = true;
+            setTimeout(() => this.copied = false, 1800);
+          } catch (e) {
+            this.copied = true;
+            setTimeout(() => this.copied = false, 1800);
+          }
+        },
+        refreshIcons() {
+          nextTick(() => lucide.createIcons());
+        }
+      },
+      mounted() {
+        this.refreshIcons();
+        const observer = new MutationObserver(() => this.refreshIcons());
+        observer.observe(this.$el, { subtree: true, childList: true });
+      },
+      updated() {
+        this.refreshIcons();
+      }
+    }).mount("#app");
+  </script>
+</body>
+</html>

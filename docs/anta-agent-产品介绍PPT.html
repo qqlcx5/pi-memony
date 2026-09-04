@@ -1,0 +1,1912 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>anta-agent 产品介绍</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #13212f;
+      --muted: #627184;
+      --line: #dce6ee;
+      --paper: #fbfdff;
+      --blue: #2076f3;
+      --cyan: #0ca8b8;
+      --green: #25a36f;
+      --amber: #d99117;
+      --red: #d84e57;
+    }
+
+    * { box-sizing: border-box; }
+    html, body, #app { width: 100%; height: 100%; margin: 0; }
+    body {
+      overflow: hidden;
+      font-family: Inter, "Noto Sans SC", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 6%, rgba(32,118,243,.10), transparent 30%),
+        radial-gradient(circle at 90% 92%, rgba(12,168,184,.08), transparent 34%),
+        #eef4f8;
+    }
+
+    button { font-family: inherit; }
+
+    .app-shell {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 252px minmax(0, 1fr);
+      transition: grid-template-columns .25s ease;
+    }
+
+    .app-shell.collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+
+    .sidebar {
+      overflow: hidden;
+      background: rgba(250,253,255,.92);
+      border-right: 1px solid rgba(196,211,223,.8);
+      backdrop-filter: blur(18px);
+    }
+
+    .sidebar-inner {
+      width: 252px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .thumb {
+      transition: all .18s ease;
+      border: 1px solid transparent;
+    }
+
+    .thumb:hover {
+      background: #f1f7fc;
+      border-color: #d7e6f2;
+      transform: translateX(2px);
+    }
+
+    .thumb.active {
+      background: linear-gradient(135deg, #eaf3ff, #eefcff);
+      border-color: #a9cdf9;
+      box-shadow: 0 5px 16px rgba(39,101,167,.09);
+    }
+
+    .main {
+      min-width: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: 58px minmax(0, 1fr) 52px;
+    }
+
+    .topbar {
+      background: rgba(248,252,255,.72);
+      border-bottom: 1px solid rgba(196,211,223,.65);
+      backdrop-filter: blur(15px);
+    }
+
+    .stage {
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px 26px;
+      overflow: hidden;
+    }
+
+    .slide {
+      position: relative;
+      width: min(1180px, calc((100vh - 146px) * 16 / 9), calc(100vw - 304px));
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid rgba(181,199,214,.85);
+      border-radius: 18px;
+      background: var(--paper);
+      box-shadow:
+        0 28px 80px rgba(43,66,88,.16),
+        0 4px 14px rgba(43,66,88,.07);
+    }
+
+    .collapsed .slide {
+      width: min(1180px, calc((100vh - 146px) * 16 / 9), calc(100vw - 56px));
+    }
+
+    .slide-enter-active, .slide-leave-active { transition: opacity .18s ease, transform .18s ease; }
+    .slide-enter-from { opacity: 0; transform: translateX(12px) scale(.993); }
+    .slide-leave-to { opacity: 0; transform: translateX(-12px) scale(.993); }
+
+    .slide-pad {
+      width: 100%;
+      height: 100%;
+      padding: 4.4% 5.2% 4.2%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .grid-paper {
+      background-image:
+        linear-gradient(rgba(36,95,145,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(36,95,145,.035) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+
+    .top-accent {
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 6px;
+      background: linear-gradient(90deg, #2478f2 0%, #0bb4b1 55%, #8fd5bf 100%);
+    }
+
+    .soft-orb {
+      position: absolute;
+      border-radius: 999px;
+      filter: blur(2px);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      color: #2471d6;
+      font-size: clamp(10px, 1vw, 13px);
+      font-weight: 800;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+
+    .slide-title {
+      margin-top: .35rem;
+      font-size: clamp(25px, 2.8vw, 39px);
+      line-height: 1.12;
+      letter-spacing: -.035em;
+      font-weight: 800;
+    }
+
+    .slide-subtitle {
+      color: var(--muted);
+      font-size: clamp(11px, 1.14vw, 15px);
+      line-height: 1.65;
+    }
+
+    .card {
+      background: rgba(255,255,255,.86);
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      box-shadow: 0 8px 22px rgba(38,70,98,.055);
+    }
+
+    .card-flat {
+      background: rgba(248,251,253,.9);
+      border: 1px solid #dce6ed;
+      border-radius: 14px;
+    }
+
+    .source-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: .28rem;
+      padding: .22rem .5rem;
+      border: 1px solid #d6e2eb;
+      border-radius: 999px;
+      background: #f5f9fc;
+      color: #637384;
+      font-size: clamp(7px, .68vw, 9px);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: nowrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .28rem;
+      padding: .25rem .55rem;
+      border-radius: 999px;
+      font-size: clamp(8px, .72vw, 10px);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .mini-label {
+      font-size: clamp(7px, .67vw, 9px);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #789;
+      font-weight: 800;
+    }
+
+    .metric-value {
+      font-weight: 800;
+      letter-spacing: -.04em;
+      font-size: clamp(25px, 3.1vw, 42px);
+      line-height: 1;
+    }
+
+    .body-xs { font-size: clamp(8px, .76vw, 10.5px); line-height: 1.55; }
+    .body-sm { font-size: clamp(9px, .88vw, 12px); line-height: 1.58; }
+    .body-md { font-size: clamp(10px, 1vw, 13.5px); line-height: 1.6; }
+    .title-sm { font-size: clamp(12px, 1.18vw, 16px); font-weight: 750; }
+    .title-md { font-size: clamp(15px, 1.5vw, 20px); font-weight: 800; }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .dot-grid {
+      background-image: radial-gradient(#bdd1df 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+
+    .table-lite {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid #dce6ee;
+      border-radius: 12px;
+      font-size: clamp(7px, .72vw, 10px);
+    }
+
+    .table-lite th {
+      text-align: left;
+      background: #edf5fa;
+      color: #536779;
+      font-weight: 800;
+      padding: .48rem .55rem;
+      border-bottom: 1px solid #dce6ee;
+    }
+
+    .table-lite td {
+      vertical-align: top;
+      padding: .46rem .55rem;
+      border-bottom: 1px solid #e8eff4;
+      color: #354858;
+      line-height: 1.42;
+    }
+
+    .table-lite tr:last-child td { border-bottom: 0; }
+    .table-lite tbody tr:nth-child(even) td { background: #fbfdfe; }
+
+    .layer-l0 { --layer: #2478f2; --layer-soft: #e9f2ff; }
+    .layer-l1 { --layer: #0d9db5; --layer-soft: #e8f9fb; }
+    .layer-l2 { --layer: #25a36f; --layer-soft: #eaf8f2; }
+    .layer-l3 { --layer: #b67a18; --layer-soft: #fff6e6; }
+
+    .layer-card {
+      border-top: 4px solid var(--layer);
+      background: linear-gradient(180deg, var(--layer-soft), white 44%);
+    }
+
+    .layer-pill { background: var(--layer); color: white; }
+
+    .connector {
+      height: 2px;
+      background: linear-gradient(90deg, #9bc2f7, #82d3d4);
+      position: relative;
+    }
+
+    .connector::after {
+      content: "";
+      position: absolute;
+      right: -1px;
+      top: -4px;
+      border-left: 7px solid #60babe;
+      border-top: 5px solid transparent;
+      border-bottom: 5px solid transparent;
+    }
+
+    .risk-high { color: #b53e47; background: #fff0f1; border-color: #f0c8cb; }
+    .risk-mid { color: #a46a12; background: #fff7e8; border-color: #ecd5a5; }
+    .risk-low { color: #207c59; background: #edf9f4; border-color: #bde2d2; }
+
+    .footerbar {
+      background: rgba(248,252,255,.76);
+      border-top: 1px solid rgba(196,211,223,.65);
+      backdrop-filter: blur(15px);
+    }
+
+    .control-btn {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #d2e0ea;
+      border-radius: 10px;
+      background: rgba(255,255,255,.86);
+      color: #53697b;
+      transition: all .16s ease;
+    }
+
+    .control-btn:hover:not(:disabled) {
+      color: #176bce;
+      border-color: #9bc4f1;
+      box-shadow: 0 4px 12px rgba(46,99,151,.10);
+      transform: translateY(-1px);
+    }
+
+    .control-btn:disabled { opacity: .38; cursor: not-allowed; }
+
+    .progress-track {
+      height: 4px;
+      border-radius: 999px;
+      background: #dce7ee;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #2478f2, #0bb4b1);
+      transition: width .25s ease;
+    }
+
+    .scorebar {
+      height: 6px;
+      background: #e5edf3;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .scorebar > span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #2478f2, #0bb4b1);
+    }
+
+    .decision-arrow {
+      position: relative;
+    }
+
+    .decision-arrow::after {
+      content: "";
+      position: absolute;
+      right: -16px;
+      top: 50%;
+      width: 16px;
+      height: 1px;
+      background: #b9cad7;
+    }
+
+    .decision-arrow:last-child::after { display: none; }
+
+    @media (max-width: 900px) {
+      .app-shell { grid-template-columns: 0 minmax(0, 1fr); }
+      .sidebar { display: none; }
+      .slide { width: min(calc(100vw - 24px), calc((100vh - 128px) * 16 / 9)); border-radius: 11px; }
+      .stage { padding: 10px 12px; }
+    }
+
+    @media print {
+      body { overflow: visible; background: white; }
+      .sidebar, .topbar, .footerbar { display: none !important; }
+      .app-shell, .main { display: block; height: auto; }
+      .stage { display: block; padding: 0; }
+      .slide {
+        width: 100vw;
+        height: 56.25vw;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        page-break-after: always;
+      }
+    }
+  </style>
+</head>
+
+<body>
+<div id="app">
+  <div class="app-shell" :class="{ collapsed: sidebarCollapsed }">
+    <aside class="sidebar">
+      <div class="sidebar-inner">
+        <div class="h-[66px] px-5 flex items-center gap-3 border-b border-slate-200/80">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white flex items-center justify-center shadow-md shadow-blue-200">
+            <span class="font-extrabold text-lg">a</span>
+          </div>
+          <div>
+            <div class="text-sm font-extrabold tracking-tight">anta-agent</div>
+            <div class="text-[10px] text-slate-500">Product deck · v0.84.9</div>
+          </div>
+        </div>
+
+        <div class="px-3 py-3 flex-1 overflow-y-auto">
+          <button
+            v-for="(slide, index) in slides"
+            :key="slide.title"
+            class="thumb w-full text-left rounded-xl px-3 py-2.5 mb-1.5 flex gap-3 items-start"
+            :class="{ active: current === index }"
+            @click="go(index)"
+          >
+            <span class="text-[10px] font-bold text-slate-400 mt-[2px] w-5">{{ String(index + 1).padStart(2, '0') }}</span>
+            <span class="min-w-0">
+              <span class="block text-[11px] font-bold text-slate-700 truncate">{{ slide.title }}</span>
+              <span class="block text-[9px] text-slate-400 truncate mt-0.5">{{ slide.kicker }}</span>
+            </span>
+          </button>
+        </div>
+
+        <div class="px-5 py-4 border-t border-slate-200/80">
+          <div class="text-[9px] leading-4 text-slate-400">
+            核实基线：<span class="font-semibold text-slate-500">packages/anta-agent @ v0.84.9</span><br>
+            MIT · Node ≥22.19 · 源码结论
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar px-4 md:px-6 flex items-center justify-between">
+        <div class="flex items-center gap-3 min-w-0">
+          <button class="control-btn !w-8 !h-8" @click="sidebarCollapsed = !sidebarCollapsed" title="切换目录">
+            <i data-lucide="panel-left-close" class="w-4 h-4"></i>
+          </button>
+          <div class="min-w-0">
+            <div class="text-xs font-bold text-slate-700 truncate">{{ slides[current].title }}</div>
+            <div class="text-[9px] text-slate-400 truncate">{{ slides[current].kicker }}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="badge bg-blue-50 text-blue-700 border border-blue-200">
+            <i data-lucide="badge-check" class="w-3 h-3"></i> 源码核实版
+          </span>
+          <button class="control-btn !w-8 !h-8" @click="toggleFullscreen" title="全屏">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </header>
+
+      <section class="stage">
+        <transition name="slide" mode="out-in">
+          <article class="slide" :key="current">
+            <div class="top-accent"></div>
+
+            <!-- 01 COVER -->
+            <div v-if="current === 0" class="slide-pad grid-paper relative">
+              <div class="soft-orb w-[34%] aspect-square bg-blue-100/70 -right-[8%] -top-[18%]"></div>
+              <div class="soft-orb w-[24%] aspect-square bg-cyan-100/60 right-[14%] bottom-[-14%]"></div>
+
+              <div class="flex items-center justify-between relative z-10">
+                <span class="badge bg-white text-blue-700 border border-blue-200 shadow-sm">
+                  <i data-lucide="scan-search" class="w-3.5 h-3.5"></i>
+                  SOURCE-VERIFIED PRODUCT BRIEF
+                </span>
+                <span class="source-chip">packages/anta-agent @ v0.84.9</span>
+              </div>
+
+              <div class="flex-1 grid grid-cols-[1.12fr_.88fr] items-center gap-[6%] relative z-10">
+                <div>
+                  <div class="eyebrow mb-4">Open-source coding agent</div>
+                  <h1 class="text-[clamp(42px,6vw,78px)] leading-[.96] tracking-[-.06em] font-extrabold">
+                    让编码 Agent<br>
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500">越用越懂你</span>
+                  </h1>
+                  <p class="mt-6 text-[clamp(13px,1.45vw,19px)] leading-relaxed text-slate-600 max-w-[650px]">
+                    anta-agent 是一台<strong class="text-slate-900">长期记忆出厂内置</strong>的开源编码 agent：
+                    终端 TUI、40 家模型供应商、全量工具、会话树，以及宿主无关的四层自动记忆引擎。
+                  </p>
+                  <div class="mt-6 flex flex-wrap gap-2">
+                    <span class="badge bg-blue-50 text-blue-700 border border-blue-200">MIT 开源</span>
+                    <span class="badge bg-cyan-50 text-cyan-700 border border-cyan-200">全本地数据</span>
+                    <span class="badge bg-emerald-50 text-emerald-700 border border-emerald-200">一键关闭记忆</span>
+                    <span class="badge bg-slate-100 text-slate-700 border border-slate-200">Node ≥22.19</span>
+                  </div>
+                </div>
+
+                <div class="relative h-[74%]">
+                  <div class="absolute inset-[4%] rounded-[24px] bg-gradient-to-br from-blue-600 to-cyan-500 rotate-3 opacity-90"></div>
+                  <div class="absolute inset-0 card p-[7%] flex flex-col bg-white/95">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full bg-red-400"></div>
+                        <div class="w-3 h-3 rounded-full bg-amber-400"></div>
+                        <div class="w-3 h-3 rounded-full bg-emerald-400"></div>
+                      </div>
+                      <span class="mono text-[9px] text-slate-400">at · interactive</span>
+                    </div>
+
+                    <div class="mt-[8%] flex-1 rounded-xl bg-slate-950 p-[7%] text-slate-200 mono text-[clamp(9px,.92vw,12px)] leading-[1.75] shadow-inner">
+                      <div class="text-cyan-300">$ at</div>
+                      <div class="mt-3 text-slate-400">加载会话域与长期记忆…</div>
+                      <div class="mt-3">
+                        <span class="text-blue-300">recall</span>
+                        <span class="text-slate-500"> → </span>
+                        <span class="text-emerald-300">5 relevant memories</span>
+                      </div>
+                      <div>
+                        <span class="text-blue-300">persona</span>
+                        <span class="text-slate-500"> → </span>
+                        <span class="text-amber-300">Operating Doctrine</span>
+                      </div>
+                      <div class="mt-4 text-white">› 继续重构支付模块，沿用上次约定</div>
+                      <div class="mt-3 text-slate-500">知道。优先保持 API 兼容，并补齐边界测试。</div>
+                      <div class="mt-6 border-t border-slate-800 pt-3 text-[8px] text-slate-500 flex justify-between">
+                        <span>token 8.4k</span><span>cache 82%</span><span>context 31%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="relative z-10 flex items-center justify-between border-t border-slate-200 pt-3">
+                <div class="body-xs text-slate-500">
+                  设计血缘：TencentDB-Agent-Memory 已验证原型 → 裁剪为单机个人版
+                </div>
+                <div class="font-semibold text-[10px] text-slate-500">记忆不是插件，是底盘的一部分。</div>
+              </div>
+            </div>
+
+            <!-- 02 EXEC SUMMARY -->
+            <div v-else-if="current === 1" class="slide-pad">
+              <div>
+                <div class="eyebrow">Executive snapshot</div>
+                <h2 class="slide-title">第三条路线：极小内核，唯一预装的大件是记忆</h2>
+                <p class="slide-subtitle mt-2">不是把所有功能做进产品，也不是把一切拆成插件树；anta-agent 选择把“长期连续性”做成出厂能力。</p>
+              </div>
+
+              <div class="grid grid-cols-4 gap-[1.4%] mt-[3%]">
+                <div class="card p-[6%]">
+                  <div class="flex justify-between items-start">
+                    <i data-lucide="brain-circuit" class="w-7 h-7 text-blue-600"></i>
+                    <span class="mini-label">Memory</span>
+                  </div>
+                  <div class="metric-value mt-[16%] text-blue-700">4 层</div>
+                  <div class="body-sm font-semibold mt-2">自动记忆引擎</div>
+                  <div class="body-xs text-slate-500 mt-1">L0 对话 → L1 原子 → L2 场景 → L3 Persona</div>
+                </div>
+                <div class="card p-[6%]">
+                  <div class="flex justify-between items-start">
+                    <i data-lucide="cloud-cog" class="w-7 h-7 text-cyan-600"></i>
+                    <span class="mini-label">Models</span>
+                  </div>
+                  <div class="metric-value mt-[16%] text-cyan-700">40</div>
+                  <div class="body-sm font-semibold mt-2">家模型 Provider</div>
+                  <div class="body-xs text-slate-500 mt-1">订阅 OAuth、API 与本地模型统一接入</div>
+                </div>
+                <div class="card p-[6%]">
+                  <div class="flex justify-between items-start">
+                    <i data-lucide="terminal-square" class="w-7 h-7 text-emerald-600"></i>
+                    <span class="mini-label">Modes</span>
+                  </div>
+                  <div class="metric-value mt-[16%] text-emerald-700">5</div>
+                  <div class="body-sm font-semibold mt-2">种运行模式</div>
+                  <div class="body-xs text-slate-500 mt-1">interactive / print / JSON / RPC / SDK</div>
+                </div>
+                <div class="card p-[6%]">
+                  <div class="flex justify-between items-start">
+                    <i data-lucide="hard-drive" class="w-7 h-7 text-amber-600"></i>
+                    <span class="mini-label">Sovereignty</span>
+                  </div>
+                  <div class="metric-value mt-[16%] text-amber-700">本地</div>
+                  <div class="body-sm font-semibold mt-2">数据完全隔离</div>
+                  <div class="body-xs text-slate-500 mt-1">~/.anta-agent；默认零嵌入网络调用</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-[1.08fr_.92fr] gap-[2%] mt-[2%] flex-1 min-h-0">
+                <div class="card-flat p-[3.2%]">
+                  <div class="title-sm flex items-center gap-2">
+                    <i data-lucide="git-compare-arrows" class="w-4 h-4 text-blue-600"></i>
+                    Harness 定位
+                  </div>
+                  <div class="grid grid-cols-3 gap-2 mt-3 h-[72%]">
+                    <div class="rounded-xl bg-slate-100 p-3">
+                      <div class="text-[11px] font-bold">Claude Code</div>
+                      <div class="text-[9px] text-slate-500 mt-1">功能做进产品</div>
+                      <div class="mt-3 body-xs text-slate-600">重、闭源、开箱即用</div>
+                    </div>
+                    <div class="rounded-xl bg-slate-100 p-3">
+                      <div class="text-[11px] font-bold">DSH</div>
+                      <div class="text-[9px] text-slate-500 mt-1">一切做进插件树</div>
+                      <div class="mt-3 body-xs text-slate-600">内核零特权、自建平台</div>
+                    </div>
+                    <div class="rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 p-3 text-white shadow-md">
+                      <div class="text-[11px] font-bold">anta-agent</div>
+                      <div class="text-[9px] text-blue-50 mt-1">极小内核 + 内置记忆</div>
+                      <div class="mt-3 body-xs text-blue-50">可关闭、不可卸载的产品取舍</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card-flat p-[3.2%]">
+                  <div class="title-sm flex items-center gap-2">
+                    <i data-lucide="scale" class="w-4 h-4 text-amber-600"></i>
+                    核心赌注
+                  </div>
+                  <blockquote class="mt-3 rounded-xl bg-white border-l-4 border-blue-500 p-[4%] text-[clamp(13px,1.45vw,19px)] leading-relaxed font-bold tracking-tight">
+                    自动蒸馏的长期记忆，是否比手写规则文件更值它消耗的 token？
+                  </blockquote>
+                  <div class="grid grid-cols-2 gap-2 mt-3">
+                    <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
+                      <div class="text-[9px] font-bold text-emerald-700">成立</div>
+                      <div class="body-xs text-emerald-900 mt-1">高频、多项目、长期使用</div>
+                    </div>
+                    <div class="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                      <div class="text-[9px] font-bold text-amber-700">不成立</div>
+                      <div class="body-xs text-amber-900 mt-1">低频、单项目、成本敏感</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3 flex justify-between items-center">
+                <span class="source-chip">src/core/anta-agent-core.ts</span>
+                <span class="body-xs text-slate-500">关掉记忆后，它就是一台普通编码 agent。</span>
+              </div>
+            </div>
+
+            <!-- 03 CAPABILITY -->
+            <div v-else-if="current === 2" class="slide-pad">
+              <div>
+                <div class="eyebrow">Product surface</div>
+                <h2 class="slide-title">编码 Agent 的完整能力面，记忆只是差异化核心</h2>
+              </div>
+
+              <div class="grid grid-cols-3 gap-[1.6%] mt-[3%] flex-1">
+                <div class="card p-[5%] flex flex-col">
+                  <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <i data-lucide="boxes" class="w-5 h-5"></i>
+                  </div>
+                  <div class="title-md mt-3">模型与鉴权</div>
+                  <div class="body-sm text-slate-500 mt-1">从云 API 到本地推理统一接入</div>
+                  <div class="mt-4 space-y-2 body-xs">
+                    <div class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-blue-600 shrink-0"></i><span>Anthropic / OpenAI / Google / Bedrock 等 40 家</span></div>
+                    <div class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-blue-600 shrink-0"></i><span>Claude Pro / ChatGPT Plus / Copilot 订阅 OAuth</span></div>
+                    <div class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-blue-600 shrink-0"></i><span>llama.cpp / MLX / Ollama 本地模型</span></div>
+                  </div>
+                  <div class="mt-auto pt-3"><span class="badge bg-blue-50 text-blue-700">换 provider，全记忆引擎跟随</span></div>
+                </div>
+
+                <div class="card p-[5%] flex flex-col">
+                  <div class="w-10 h-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center">
+                    <i data-lucide="wrench" class="w-5 h-5"></i>
+                  </div>
+                  <div class="title-md mt-3">工具与交互</div>
+                  <div class="body-sm text-slate-500 mt-1">覆盖日常代码编辑与会话操作</div>
+                  <div class="mt-4 grid grid-cols-2 gap-2 body-xs">
+                    <span class="rounded-lg bg-slate-100 px-2 py-1.5 mono">read</span>
+                    <span class="rounded-lg bg-slate-100 px-2 py-1.5 mono">bash</span>
+                    <span class="rounded-lg bg-slate-100 px-2 py-1.5 mono">edit</span>
+                    <span class="rounded-lg bg-slate-100 px-2 py-1.5 mono">write</span>
+                    <span class="rounded-lg bg-slate-100 px-2 py-1.5 mono">grep</span>
+                    <span class="rounded-lg bg-slate-100 px-2 py-1.5 mono">find / ls</span>
+                  </div>
+                  <div class="mt-3 body-xs text-slate-500">Windows 另有原生 <span class="mono">powershell</span></div>
+                  <div class="mt-auto pt-3"><span class="badge bg-cyan-50 text-cyan-700">/tree · /fork · /compact · steering</span></div>
+                </div>
+
+                <div class="card p-[5%] flex flex-col">
+                  <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <i data-lucide="plug-zap" class="w-5 h-5"></i>
+                  </div>
+                  <div class="title-md mt-3">扩展与运行模式</div>
+                  <div class="body-sm text-slate-500 mt-1">TS 扩展 API 与多形态嵌入能力</div>
+                  <div class="mt-4 space-y-2 body-xs">
+                    <div class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 shrink-0"></i><span>约 30 个事件，注册工具 / 命令 / 快捷键 / 主题</span></div>
+                    <div class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 shrink-0"></i><span>热重载、Skills、Prompt 模板、主题</span></div>
+                    <div class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 shrink-0"></i><span>Interactive / Print / JSON / RPC / SDK</span></div>
+                  </div>
+                  <div class="mt-auto pt-3"><span class="badge bg-emerald-50 text-emerald-700">扩展系统覆盖工具、事件与 UI</span></div>
+                </div>
+              </div>
+
+              <div class="mt-[2%] grid grid-cols-[1fr_1fr_1fr_1.2fr] gap-2">
+                <div class="card-flat px-3 py-2 flex items-center gap-2">
+                  <i data-lucide="bookmark-plus" class="w-4 h-4 text-blue-600"></i>
+                  <span class="body-xs"><strong>/remember</strong> 显式存储</span>
+                </div>
+                <div class="card-flat px-3 py-2 flex items-center gap-2">
+                  <i data-lucide="activity" class="w-4 h-4 text-cyan-600"></i>
+                  <span class="body-xs"><strong>/memory</strong> 查看状态</span>
+                </div>
+                <div class="card-flat px-3 py-2 flex items-center gap-2">
+                  <i data-lucide="search" class="w-4 h-4 text-emerald-600"></i>
+                  <span class="body-xs"><strong>memory_search</strong></span>
+                </div>
+                <div class="card-flat px-3 py-2 flex items-center gap-2">
+                  <i data-lucide="messages-square" class="w-4 h-4 text-amber-600"></i>
+                  <span class="body-xs"><strong>conversation_search</strong></span>
+                </div>
+              </div>
+
+              <div class="mt-3 flex justify-between items-center">
+                <span class="source-chip">src/anta-agent-extension.ts · createChineseFooter</span>
+                <span class="body-xs text-slate-500">中文状态栏实时显示 token / 缓存命中 / 费用 / 上下文占用</span>
+              </div>
+            </div>
+
+            <!-- 04 ARCHITECTURE -->
+            <div v-else-if="current === 3" class="slide-pad dot-grid">
+              <div>
+                <div class="eyebrow">Architecture</div>
+                <h2 class="slide-title">壳、接线、适配器、核心：宿主细节止步于边界</h2>
+                <p class="slide-subtitle mt-2">核心只认识一次文本补全接口 <span class="mono font-semibold">LlmRunner</span>，不知道宿主存在。</p>
+              </div>
+
+              <div class="grid grid-cols-[1fr_52px_1fr_52px_1.15fr] items-stretch gap-2 mt-[4%]">
+                <div class="card p-[5%] border-t-4 border-t-slate-500">
+                  <div class="flex items-center justify-between">
+                    <div class="title-sm">CLI 壳</div>
+                    <i data-lucide="terminal" class="w-5 h-5 text-slate-500"></i>
+                  </div>
+                  <div class="body-xs text-slate-500 mt-1 mono">src/cli.ts</div>
+                  <ul class="mt-4 body-xs text-slate-600 space-y-2">
+                    <li>• 命令 <span class="mono font-bold">at</span> 启动底座 CLI</li>
+                    <li>• 以内置扩展身份接入</li>
+                    <li>• 数据目录钉到 <span class="mono">~/.anta-agent</span></li>
+                  </ul>
+                </div>
+
+                <div class="flex items-center"><div class="connector w-full"></div></div>
+
+                <div class="card p-[5%] border-t-4 border-t-blue-500">
+                  <div class="flex items-center justify-between">
+                    <div class="title-sm">宿主接线</div>
+                    <i data-lucide="cable" class="w-5 h-5 text-blue-600"></i>
+                  </div>
+                  <div class="body-xs text-slate-500 mt-1 mono">anta-agent-extension.ts</div>
+                  <ul class="mt-4 body-xs text-slate-600 space-y-2">
+                    <li>• 挂载 6 个生命周期事件</li>
+                    <li>• 注册 2 工具 + 2 命令</li>
+                    <li>• TUI 中文状态栏</li>
+                  </ul>
+                </div>
+
+                <div class="flex items-center"><div class="connector w-full"></div></div>
+
+                <div class="card p-[5%] border-t-4 border-t-cyan-500">
+                  <div class="flex items-center justify-between">
+                    <div class="title-sm">Host Adapter</div>
+                    <i data-lucide="shuffle" class="w-5 h-5 text-cyan-600"></i>
+                  </div>
+                  <div class="body-xs text-slate-500 mt-1 mono">host-adapter.ts</div>
+                  <ul class="mt-4 body-xs text-slate-600 space-y-2">
+                    <li>• 宿主会话身份 → <span class="mono">MemoryScope</span></li>
+                    <li>• 隔离宿主 API 演进</li>
+                    <li>• 核心接口保持稳定</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="mt-[2.2%] rounded-2xl p-[3.2%] bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-xl relative overflow-hidden">
+                <div class="absolute right-0 top-0 w-[38%] h-full bg-gradient-to-l from-blue-500/20 to-transparent"></div>
+                <div class="relative grid grid-cols-[.95fr_1.2fr_.85fr] gap-[4%] items-center">
+                  <div>
+                    <div class="mini-label !text-cyan-300">HOST-NEUTRAL CORE</div>
+                    <div class="text-[clamp(19px,2vw,27px)] font-extrabold mt-1">AntaAgent facade</div>
+                    <div class="body-xs text-slate-300 mt-2">capture / recall / search</div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="rounded-lg bg-white/8 border border-white/10 p-2.5 body-xs">四层流水线</div>
+                    <div class="rounded-lg bg-white/8 border border-white/10 p-2.5 body-xs">混合检索</div>
+                    <div class="rounded-lg bg-white/8 border border-white/10 p-2.5 body-xs">持久化与审计</div>
+                    <div class="rounded-lg bg-white/8 border border-white/10 p-2.5 body-xs">安全净化</div>
+                  </div>
+                  <div class="rounded-xl bg-emerald-400/10 border border-emerald-300/30 p-3">
+                    <div class="flex gap-2 items-center text-emerald-300 font-bold body-sm">
+                      <i data-lucide="shield-check" class="w-4 h-4"></i> NEVER THROWS
+                    </div>
+                    <div class="body-xs text-slate-300 mt-2">记忆故障不允许杀掉宿主会话；对终端用户 fail-soft。</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-auto flex items-center justify-between">
+                <span class="source-chip">src/core/** · src/http-dispatcher.ts</span>
+                <span class="body-xs text-slate-500">自带 undici dispatcher：300s 空闲超时与代理配置</span>
+              </div>
+            </div>
+
+            <!-- 05 FOUR LAYERS -->
+            <div v-else-if="current === 4" class="slide-pad">
+              <div>
+                <div class="eyebrow">Memory engine</div>
+                <h2 class="slide-title">四层数据流：从逐轮事实到长期操作准则</h2>
+                <p class="slide-subtitle mt-2">写入在后台自动发生；新回合以混合检索、Persona 与场景导航完成召回。</p>
+              </div>
+
+              <div class="mt-[3.2%] grid grid-cols-[1fr_34px_1fr_34px_1fr_34px_1fr] items-center">
+                <div class="layer-card layer-l0 card p-[6%] h-full">
+                  <span class="badge layer-pill">L0</span>
+                  <div class="title-md mt-3">完整对话</div>
+                  <div class="body-xs text-slate-500 mt-2">每轮同步捕获；失败或中止回合剔除</div>
+                  <div class="mt-4 mono body-xs text-blue-700">JSONL → SQLite</div>
+                </div>
+                <div class="flex items-center"><div class="connector w-full"></div></div>
+
+                <div class="layer-card layer-l1 card p-[6%] h-full">
+                  <span class="badge layer-pill">L1</span>
+                  <div class="title-md mt-3">原子记忆</div>
+                  <div class="body-xs text-slate-500 mt-2">情境切分、提取与批量去重</div>
+                  <div class="mt-4 mono body-xs text-cyan-700">4-way dedup</div>
+                </div>
+                <div class="flex items-center"><div class="connector w-full"></div></div>
+
+                <div class="layer-card layer-l2 card p-[6%] h-full">
+                  <span class="badge layer-pill">L2</span>
+                  <div class="title-md mt-3">场景块</div>
+                  <div class="body-xs text-slate-500 mt-2">叙事式 Markdown，形成项目导航</div>
+                  <div class="mt-4 mono body-xs text-emerald-700">≤15 scenes</div>
+                </div>
+                <div class="flex items-center"><div class="connector w-full"></div></div>
+
+                <div class="layer-card layer-l3 card p-[6%] h-full">
+                  <span class="badge layer-pill">L3</span>
+                  <div class="title-md mt-3">Persona</div>
+                  <div class="body-xs text-slate-500 mt-2">偏好、SOP、决策逻辑与边界</div>
+                  <div class="mt-4 mono body-xs text-amber-700">50 memories</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-[1.25fr_.75fr] gap-[2%] mt-[2.4%] flex-1 min-h-0">
+                <div class="card-flat p-[3%]">
+                  <div class="title-sm">默认调度节奏</div>
+                  <div class="mt-3 grid grid-cols-4 gap-2">
+                    <div class="rounded-lg bg-blue-50 p-2.5">
+                      <div class="mini-label text-blue-600">Capture</div>
+                      <div class="body-sm font-bold mt-1">每回合</div>
+                      <div class="body-xs text-slate-500">同步落 L0</div>
+                    </div>
+                    <div class="rounded-lg bg-cyan-50 p-2.5">
+                      <div class="mini-label text-cyan-600">Distill</div>
+                      <div class="body-sm font-bold mt-1">每 5 轮</div>
+                      <div class="body-xs text-slate-500">或空闲 10min</div>
+                    </div>
+                    <div class="rounded-lg bg-emerald-50 p-2.5">
+                      <div class="mini-label text-emerald-600">Scenes</div>
+                      <div class="body-sm font-bold mt-1">延迟 10s</div>
+                      <div class="body-xs text-slate-500">最小间隔 15min</div>
+                    </div>
+                    <div class="rounded-lg bg-amber-50 p-2.5">
+                      <div class="mini-label text-amber-600">Persona</div>
+                      <div class="body-sm font-bold mt-1">每 50 条</div>
+                      <div class="body-xs text-slate-500">增量重生成</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card-flat p-[4%]">
+                  <div class="title-sm">新回合注入</div>
+                  <div class="mt-3 space-y-2 body-xs">
+                    <div class="flex items-center gap-2 rounded-lg bg-white border border-slate-200 p-2">
+                      <i data-lucide="search-check" class="w-4 h-4 text-blue-600"></i>
+                      混合检索 RRF
+                    </div>
+                    <div class="flex items-center gap-2 rounded-lg bg-white border border-slate-200 p-2">
+                      <i data-lucide="user-round-cog" class="w-4 h-4 text-cyan-600"></i>
+                      Persona
+                    </div>
+                    <div class="flex items-center gap-2 rounded-lg bg-white border border-slate-200 p-2">
+                      <i data-lucide="map" class="w-4 h-4 text-emerald-600"></i>
+                      场景导航
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3 flex justify-between">
+                <span class="source-chip">pipeline/manager.ts · config.ts</span>
+                <span class="body-xs text-slate-500">所有数字均为 v0.84.9 源码默认值</span>
+              </div>
+            </div>
+
+            <!-- 06 L0 L1 -->
+            <div v-else-if="current === 5" class="slide-pad">
+              <div>
+                <div class="eyebrow">Distillation details</div>
+                <h2 class="slide-title">L0 保真，L1 蒸馏：先保存世界，再让模型解释世界</h2>
+              </div>
+
+              <div class="grid grid-cols-2 gap-[2%] mt-[3%] flex-1 min-h-0">
+                <div class="card layer-card layer-l0 p-[5%]">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <span class="badge layer-pill">L0 · CONVERSATION</span>
+                      <div class="title-md mt-3">追加式真相源</div>
+                    </div>
+                    <i data-lucide="database-backup" class="w-8 h-8 text-blue-600"></i>
+                  </div>
+
+                  <div class="mt-4 rounded-xl bg-slate-950 text-slate-200 mono body-xs p-4 leading-relaxed">
+                    <div><span class="text-blue-300">01</span> write conversations/2025-xx-xx.jsonl</div>
+                    <div><span class="text-blue-300">02</span> project → l0_conversations</div>
+                    <div><span class="text-blue-300">03</span> index → l0_fts</div>
+                    <div class="mt-2 text-emerald-300">✓ crash replayable</div>
+                  </div>
+
+                  <div class="mt-4 space-y-2 body-sm">
+                    <div class="flex gap-2"><i data-lucide="check-circle-2" class="w-4 h-4 text-blue-600 shrink-0"></i><span><strong>JSONL 先写</strong>，SQLite 后投影</span></div>
+                    <div class="flex gap-2"><i data-lucide="check-circle-2" class="w-4 h-4 text-blue-600 shrink-0"></i><span>失败 / 中止回合不进入记忆</span></div>
+                    <div class="flex gap-2"><i data-lucide="check-circle-2" class="w-4 h-4 text-blue-600 shrink-0"></i><span>崩溃后可重放恢复投影</span></div>
+                  </div>
+                </div>
+
+                <div class="card layer-card layer-l1 p-[5%]">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <span class="badge layer-pill">L1 · ATOMIC MEMORY</span>
+                      <div class="title-md mt-3">两次调用完成提取与决策</div>
+                    </div>
+                    <i data-lucide="sparkles" class="w-8 h-8 text-cyan-600"></i>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2 mt-4">
+                    <div class="rounded-xl bg-cyan-50 border border-cyan-100 p-3">
+                      <div class="mini-label text-cyan-700">CHAT MODE</div>
+                      <div class="body-xs mt-2">persona · episodic · instruction</div>
+                    </div>
+                    <div class="rounded-xl bg-blue-50 border border-blue-100 p-3">
+                      <div class="mini-label text-blue-700">CODE MODE</div>
+                      <div class="body-xs mt-2">work_fact · work_task · work_method · work_artifact</div>
+                    </div>
+                  </div>
+
+                  <div class="mt-4">
+                    <div class="mini-label">BATCH DEDUP DECISIONS</div>
+                    <div class="grid grid-cols-4 gap-2 mt-2">
+                      <div class="rounded-lg bg-emerald-50 border border-emerald-200 p-2 text-center">
+                        <div class="body-sm font-bold text-emerald-700">store</div>
+                        <div class="body-xs text-slate-500">新增</div>
+                      </div>
+                      <div class="rounded-lg bg-blue-50 border border-blue-200 p-2 text-center">
+                        <div class="body-sm font-bold text-blue-700">update</div>
+                        <div class="body-xs text-slate-500">修订</div>
+                      </div>
+                      <div class="rounded-lg bg-amber-50 border border-amber-200 p-2 text-center">
+                        <div class="body-sm font-bold text-amber-700">merge</div>
+                        <div class="body-xs text-slate-500">合并</div>
+                      </div>
+                      <div class="rounded-lg bg-slate-100 border border-slate-200 p-2 text-center">
+                        <div class="body-sm font-bold text-slate-700">skip</div>
+                        <div class="body-xs text-slate-500">忽略</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 body-xs text-slate-500">
+                    允许跨类型合并与“一换多”；异常输出有 degrade-to-store 与重试兜底。
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-[2%] rounded-xl border border-cyan-200 bg-cyan-50/70 px-[3%] py-[1.5%] flex items-center justify-between">
+                <div class="body-sm font-semibold text-cyan-900">水位线只推进已处理部分</div>
+                <div class="body-xs text-cyan-800">单批 ≤400 消息 · ≤120k 字符 · ≤3 个 LLM 分块 · 崩溃只重试，不丢数据</div>
+              </div>
+            </div>
+
+            <!-- 07 L2 L3 -->
+            <div v-else-if="current === 6" class="slide-pad">
+              <div>
+                <div class="eyebrow">Context synthesis</div>
+                <h2 class="slide-title">L2 建导航，L3 建准则：让长期记忆从“碎片”变成“结构”</h2>
+              </div>
+
+              <div class="grid grid-cols-[1.05fr_.95fr] gap-[2%] mt-[3%] flex-1 min-h-0">
+                <div class="card layer-card layer-l2 p-[4.5%]">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <span class="badge layer-pill">L2 · SCENE BLOCKS</span>
+                      <div class="title-md mt-2">叙事式 Markdown 场景</div>
+                    </div>
+                    <i data-lucide="map-pinned" class="w-8 h-8 text-emerald-600"></i>
+                  </div>
+
+                  <div class="mt-4 rounded-xl border border-slate-200 bg-white overflow-hidden">
+                    <div class="px-3 py-2 bg-slate-100 border-b border-slate-200 mono body-xs text-slate-500">scene_blocks/payment-refactor.md</div>
+                    <div class="p-4 mono body-xs leading-relaxed">
+                      <div class="text-emerald-700">---</div>
+                      <div>summary: 支付模块兼容性重构</div>
+                      <div>heat: 0.84</div>
+                      <div>updated_at: 2025-xx-xx</div>
+                      <div class="text-emerald-700">---</div>
+                      <div class="mt-2 font-bold"># 决策与进展</div>
+                      <div class="text-slate-500 mt-1">保持公开 API；先补边界测试，再替换内部实现…</div>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-3 gap-2 mt-4">
+                    <div class="rounded-lg bg-emerald-50 p-2 text-center body-xs"><strong>create</strong><br><span class="text-slate-500">新建</span></div>
+                    <div class="rounded-lg bg-blue-50 p-2 text-center body-xs"><strong>update</strong><br><span class="text-slate-500">默认优先</span></div>
+                    <div class="rounded-lg bg-red-50 p-2 text-center body-xs"><strong>delete</strong><br><span class="text-slate-500">删除</span></div>
+                  </div>
+
+                  <div class="mt-3 body-xs text-slate-500">≤12 op/次 · ≤15 个场景 · 超出上限强制合并 · 更新前快照，保留 10 份</div>
+                </div>
+
+                <div class="card layer-card layer-l3 p-[4.5%]">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <span class="badge layer-pill">L3 · PERSONA</span>
+                      <div class="title-md mt-2">长期操作画像</div>
+                    </div>
+                    <i data-lucide="fingerprint" class="w-8 h-8 text-amber-600"></i>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2 mt-4">
+                    <div class="rounded-xl bg-amber-50 border border-amber-200 p-3">
+                      <div class="mini-label text-amber-700">CHAT</div>
+                      <div class="body-sm font-bold mt-1">User Narrative Profile</div>
+                      <div class="body-xs text-slate-500 mt-2">≤2000 字</div>
+                    </div>
+                    <div class="rounded-xl bg-blue-50 border border-blue-200 p-3">
+                      <div class="mini-label text-blue-700">CODE</div>
+                      <div class="body-sm font-bold mt-1">Operating Doctrine</div>
+                      <div class="body-xs text-slate-500 mt-2">≤1200 字</div>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 rounded-xl bg-slate-50 border border-slate-200 p-4">
+                    <div class="mini-label">CODE MODE CONTENT</div>
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 body-xs">
+                      <div class="flex gap-2"><i data-lucide="workflow" class="w-3.5 h-3.5 text-amber-600"></i>SOP</div>
+                      <div class="flex gap-2"><i data-lucide="compass" class="w-3.5 h-3.5 text-amber-600"></i>原则</div>
+                      <div class="flex gap-2"><i data-lucide="git-branch" class="w-3.5 h-3.5 text-amber-600"></i>决策逻辑</div>
+                      <div class="flex gap-2"><i data-lucide="shield" class="w-3.5 h-3.5 text-amber-600"></i>边界</div>
+                      <div class="flex gap-2"><i data-lucide="ban" class="w-3.5 h-3.5 text-amber-600"></i>反模式</div>
+                      <div class="flex gap-2"><i data-lucide="bot" class="w-3.5 h-3.5 text-amber-600"></i>Agent 规则</div>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 body-xs text-slate-500">
+                    每 50 条新记忆增量重生成：强化 / 补充 / 修正 / 重构 / 不改；写入 <span class="mono">persona.md</span>，轮转备份 ×3。
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-[2%] flex justify-between items-center">
+                <span class="source-chip">scene_blocks/*.md · persona.md</span>
+                <span class="badge bg-emerald-50 text-emerald-700 border border-emerald-200">场景索引与 Persona 均可重建</span>
+              </div>
+            </div>
+
+            <!-- 08 RELIABILITY -->
+            <div v-else-if="current === 7" class="slide-pad">
+              <div>
+                <div class="eyebrow">Reliability engineering</div>
+                <h2 class="slide-title">工程质量的核心：事实源优先、原子推进、优雅关机</h2>
+              </div>
+
+              <div class="grid grid-cols-5 gap-[1.2%] mt-[3.3%]">
+                <div class="card p-[5%]">
+                  <div class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center"><i data-lucide="file-json-2" class="w-5 h-5"></i></div>
+                  <div class="title-sm mt-3">先日志</div>
+                  <div class="body-xs text-slate-500 mt-2">JSONL 先于 SQLite，投影可重放。</div>
+                </div>
+                <div class="card p-[5%]">
+                  <div class="w-9 h-9 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center"><i data-lucide="save" class="w-5 h-5"></i></div>
+                  <div class="title-sm mt-3">原子 checkpoint</div>
+                  <div class="body-xs text-slate-500 mt-2">tmp + rename，避免半写状态。</div>
+                </div>
+                <div class="card p-[5%]">
+                  <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center"><i data-lucide="database-zap" class="w-5 h-5"></i></div>
+                  <div class="title-sm mt-3">SQLite WAL</div>
+                  <div class="body-xs text-slate-500 mt-2">单进程内提高读写可靠性。</div>
+                </div>
+                <div class="card p-[5%]">
+                  <div class="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center"><i data-lucide="list-checks" class="w-5 h-5"></i></div>
+                  <div class="title-sm mt-3">全量审计</div>
+                  <div class="body-xs text-slate-500 mt-2">四类决策均追加 records/*.jsonl。</div>
+                </div>
+                <div class="card p-[5%]">
+                  <div class="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center"><i data-lucide="triangle-alert" class="w-5 h-5"></i></div>
+                  <div class="title-sm mt-3">响亮失败</div>
+                  <div class="body-xs text-slate-500 mt-2">主写失败阻止水位线推进。</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-[1.15fr_.85fr] gap-[2%] mt-[2.4%] flex-1 min-h-0">
+                <div class="card-flat p-[3%]">
+                  <div class="title-sm flex gap-2 items-center">
+                    <i data-lucide="power" class="w-4 h-4 text-blue-600"></i>
+                    关机协议
+                  </div>
+                  <div class="mt-4 grid grid-cols-[1fr_24px_1fr_24px_1fr_24px_1fr] items-center">
+                    <div class="rounded-lg bg-white border border-slate-200 p-2.5 text-center body-xs font-semibold">停收新任务</div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400"></i>
+                    <div class="rounded-lg bg-white border border-slate-200 p-2.5 text-center body-xs font-semibold">等待 ≤5s</div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400"></i>
+                    <div class="rounded-lg bg-white border border-slate-200 p-2.5 text-center body-xs font-semibold">flush</div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400"></i>
+                    <div class="rounded-lg bg-white border border-slate-200 p-2.5 text-center body-xs font-semibold">关闭数据库</div>
+                  </div>
+                  <div class="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 body-sm text-amber-900">
+                    超时不强拆：<strong>延迟关库</strong>，避免在活跃操作底下抽走数据库。
+                  </div>
+                </div>
+
+                <div class="card-flat p-[3%]">
+                  <div class="title-sm flex gap-2 items-center">
+                    <i data-lucide="clock-3" class="w-4 h-4 text-cyan-600"></i>
+                    L2 节流与积压策略
+                  </div>
+                  <div class="mt-3 space-y-2 body-xs">
+                    <div class="flex justify-between rounded-lg bg-white border border-slate-200 p-2.5"><span>L1 完成后延迟</span><strong>10s</strong></div>
+                    <div class="flex justify-between rounded-lg bg-white border border-slate-200 p-2.5"><span>最小执行间隔</span><strong>15min</strong></div>
+                    <div class="flex justify-between rounded-lg bg-white border border-slate-200 p-2.5"><span>积压强制通过</span><strong>&gt;1h</strong></div>
+                    <div class="flex justify-between rounded-lg bg-white border border-slate-200 p-2.5"><span>场景快照保留</span><strong>10 份</strong></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3 rounded-xl bg-slate-900 text-white px-[3%] py-[1.3%] flex justify-between items-center">
+                <span class="body-sm font-semibold">面向部署者：写入失败必须响亮</span>
+                <span class="body-xs text-slate-300">面向终端用户：记忆失败必须降级，不中断编码会话</span>
+              </div>
+            </div>
+
+            <!-- 09 RETRIEVAL -->
+            <div v-else-if="current === 8" class="slide-pad">
+              <div>
+                <div class="eyebrow">Retrieval & injection</div>
+                <h2 class="slide-title">关键词 + 向量融合；动态与稳定上下文分流</h2>
+                <p class="slide-subtitle mt-2">第一约束不是“塞更多记忆”，而是保住 provider prompt cache。</p>
+              </div>
+
+              <div class="grid grid-cols-[.95fr_1.05fr] gap-[2%] mt-[3%] flex-1 min-h-0">
+                <div class="card p-[4%]">
+                  <div class="title-md flex gap-2 items-center">
+                    <i data-lucide="blend" class="w-5 h-5 text-blue-600"></i>
+                    混合检索
+                  </div>
+
+                  <div class="mt-4 grid grid-cols-[1fr_34px_1fr] items-center">
+                    <div class="rounded-xl bg-blue-50 border border-blue-200 p-4 text-center">
+                      <i data-lucide="text-search" class="w-6 h-6 text-blue-600 mx-auto"></i>
+                      <div class="body-sm font-bold mt-2">FTS5 trigram</div>
+                      <div class="body-xs text-slate-500 mt-1">BM25 · 中英单发</div>
+                    </div>
+                    <div class="text-center text-blue-500 font-extrabold">+</div>
+                    <div class="rounded-xl bg-cyan-50 border border-cyan-200 p-4 text-center">
+                      <i data-lucide="orbit" class="w-6 h-6 text-cyan-600 mx-auto"></i>
+                      <div class="body-sm font-bold mt-2">暴力余弦</div>
+                      <div class="body-xs text-slate-500 mt-1">typed-array 线性扫</div>
+                    </div>
+                  </div>
+
+                  <div class="mt-3 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white p-3 text-center">
+                    <div class="mini-label !text-blue-100">RECIPROCAL RANK FUSION</div>
+                    <div class="text-[clamp(20px,2.3vw,30px)] font-extrabold mt-1">RRF · k = 60</div>
+                  </div>
+
+                  <div class="mt-4 body-xs text-slate-500 leading-relaxed">
+                    个人库万级条目线性扫描仍是毫秒级；不引入原生向量扩展是明确的工程权衡，而非能力缺失。
+                  </div>
+
+                  <div class="mt-3 rounded-lg bg-slate-50 border border-slate-200 p-3 body-xs">
+                    <strong>嵌入默认关闭：</strong><span class="mono">provider: "none"</span>。配置 OpenAI 兼容端点后，后台 32/批回填；失败降级关键词。
+                  </div>
+                </div>
+
+                <div class="card p-[4%]">
+                  <div class="title-md flex gap-2 items-center">
+                    <i data-lucide="split" class="w-5 h-5 text-cyan-600"></i>
+                    两股注入，隔离变化频率
+                  </div>
+
+                  <div class="mt-4 space-y-3">
+                    <div class="rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+                      <div class="flex items-start justify-between">
+                        <div>
+                          <span class="badge bg-blue-600 text-white">动态</span>
+                          <div class="body-sm font-bold mt-2 mono">&lt;relevant-memories&gt;</div>
+                        </div>
+                        <i data-lucide="message-square-user" class="w-6 h-6 text-blue-600"></i>
+                      </div>
+                      <div class="body-xs text-slate-600 mt-2">默认 ≤5 条，贴到<strong>最后一条用户消息</strong>。每轮可变，不修改系统提示。</div>
+                    </div>
+
+                    <div class="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
+                      <div class="flex items-start justify-between">
+                        <div>
+                          <span class="badge bg-emerald-600 text-white">稳定</span>
+                          <div class="body-xs font-bold mt-2 mono leading-relaxed">
+                            &lt;user-persona&gt;<br>
+                            &lt;scene-navigation&gt;<br>
+                            &lt;memory-tools-guide&gt;
+                          </div>
+                        </div>
+                        <i data-lucide="server-cog" class="w-6 h-6 text-emerald-600"></i>
+                      </div>
+                      <div class="body-xs text-slate-600 mt-2">追加到<strong>系统提示尾部</strong>，跨轮稳定，保住 provider prompt cache。</div>
+                    </div>
+                  </div>
+
+                  <div class="mt-3 flex items-center gap-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
+                    <i data-lucide="life-buoy" class="w-5 h-5 text-amber-600 shrink-0"></i>
+                    <div class="body-xs text-amber-900">
+                      注入不够时调用 <strong>memory_search</strong> / <strong>conversation_search</strong>；工具指南硬限每轮合计 ≤3 次。
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3 flex justify-between">
+                <span class="source-chip">recall/recall-context.ts</span>
+                <span class="body-xs text-slate-500">模型或维度变化时自动清空并重新嵌入</span>
+              </div>
+            </div>
+
+            <!-- 10 SECURITY -->
+            <div v-else-if="current === 9" class="slide-pad">
+              <div>
+                <div class="eyebrow">Security boundary</div>
+                <h2 class="slide-title">把记忆当作不可信参考数据，而不是隐形系统指令</h2>
+              </div>
+
+              <div class="mt-[3%] grid grid-cols-[.9fr_1.1fr] gap-[2%] flex-1 min-h-0">
+                <div class="card p-[4.5%]">
+                  <div class="title-md flex items-center gap-2">
+                    <i data-lucide="shield-check" class="w-5 h-5 text-emerald-600"></i>
+                    三个真实边界统一净化
+                  </div>
+
+                  <div class="mt-5 space-y-3">
+                    <div class="rounded-xl bg-blue-50 border border-blue-200 p-3 flex gap-3 items-center">
+                      <div class="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center"><i data-lucide="database" class="w-4 h-4"></i></div>
+                      <div><div class="body-sm font-bold">持久化边界</div><div class="body-xs text-slate-500">进入长期存储前净化</div></div>
+                    </div>
+                    <div class="rounded-xl bg-cyan-50 border border-cyan-200 p-3 flex gap-3 items-center">
+                      <div class="w-9 h-9 rounded-lg bg-cyan-600 text-white flex items-center justify-center"><i data-lucide="message-square-code" class="w-4 h-4"></i></div>
+                      <div><div class="body-sm font-bold">注入边界</div><div class="body-xs text-slate-500">进入模型上下文前净化</div></div>
+                    </div>
+                    <div class="rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex gap-3 items-center">
+                      <div class="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center"><i data-lucide="file-lock-2" class="w-4 h-4"></i></div>
+                      <div><div class="body-sm font-bold">文件写边界</div><div class="body-xs text-slate-500">场景与 Persona 落盘前净化</div></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid grid-rows-[1fr_.72fr] gap-[3%]">
+                  <div class="card p-[4%]">
+                    <div class="flex justify-between items-center">
+                      <div class="title-sm mono">sanitizeUntrustedText</div>
+                      <span class="badge bg-emerald-50 text-emerald-700 border border-emerald-200">生产路径已接线</span>
+                    </div>
+                    <div class="mt-4 grid grid-cols-2 gap-2 body-xs">
+                      <div class="rounded-lg bg-slate-50 border border-slate-200 p-3 flex gap-2"><i data-lucide="braces" class="w-4 h-4 text-blue-600"></i>中和包装标签字面量</div>
+                      <div class="rounded-lg bg-slate-50 border border-slate-200 p-3 flex gap-2"><i data-lucide="eraser" class="w-4 h-4 text-cyan-600"></i>剥离控制字符</div>
+                      <div class="rounded-lg bg-slate-50 border border-slate-200 p-3 flex gap-2"><i data-lucide="binary" class="w-4 h-4 text-emerald-600"></i>修复非法代理对</div>
+                      <div class="rounded-lg bg-slate-50 border border-slate-200 p-3 flex gap-2"><i data-lucide="scissors" class="w-4 h-4 text-amber-600"></i>字段长度截断</div>
+                      <div class="rounded-lg bg-slate-50 border border-slate-200 p-3 flex gap-2"><i data-lucide="file-check-2" class="w-4 h-4 text-blue-600"></i>场景文件名白名单</div>
+                      <div class="rounded-lg bg-slate-50 border border-slate-200 p-3 flex gap-2"><i data-lucide="folder-x" class="w-4 h-4 text-red-500"></i>拒绝路径逃逸</div>
+                    </div>
+                  </div>
+
+                  <div class="rounded-2xl bg-rose-50 border border-rose-200 p-[4%]">
+                    <div class="flex gap-2 items-center text-rose-700 font-bold title-sm">
+                      <i data-lucide="circle-alert" class="w-5 h-5"></i>
+                      不应宣传“已做注入检测”
+                    </div>
+                    <div class="body-sm text-rose-900 mt-2">
+                      <span class="mono">containsPromptInjection</span> 虽已导出，但生产路径未接线，仅测试引用。
+                    </div>
+                    <div class="body-xs text-rose-700 mt-2">现有保护来自转义、截断与路径白名单；是边界防御，不是语义检测。</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-[2%] rounded-xl bg-slate-900 text-white px-[3%] py-[1.3%] flex justify-between">
+                <span class="body-sm font-semibold">原则：校验只在真边界</span>
+                <span class="body-xs text-slate-300">进程内信任类型，不重复堆防线</span>
+              </div>
+            </div>
+
+            <!-- 11 DSH SCORE -->
+            <div v-else-if="current === 10" class="slide-pad">
+              <div>
+                <div class="eyebrow">DSH seven-model review</div>
+                <h2 class="slide-title">按插件化 Harness 哲学横评：事实源与投影是最大亮点</h2>
+              </div>
+
+              <div class="mt-[2.6%] grid grid-cols-[.83fr_1.17fr] gap-[2%] flex-1 min-h-0">
+                <div class="card p-[4%] flex flex-col">
+                  <div class="title-sm">模型达成度</div>
+                  <div class="mt-4 space-y-[4.5%]">
+                    <div v-for="item in dshScores" :key="item.name">
+                      <div class="flex justify-between body-xs mb-1.5">
+                        <span class="font-semibold">{{ item.name }}</span>
+                        <span class="text-slate-500">{{ item.label }}</span>
+                      </div>
+                      <div class="scorebar"><span :style="{width: item.score + '%'}"></span></div>
+                    </div>
+                  </div>
+                  <div class="mt-auto rounded-xl bg-blue-50 border border-blue-200 p-3 body-xs text-blue-900">
+                    <strong>“Model-visible means logged”</strong>：注入模型的每一句都可由记忆库与审计日志重建。
+                  </div>
+                </div>
+
+                <div class="card overflow-hidden">
+                  <table class="table-lite !border-0 !rounded-none h-full">
+                    <thead>
+                      <tr>
+                        <th class="w-[28%]">DSH 模型</th>
+                        <th>anta-agent 现状</th>
+                        <th class="w-[18%]">判定</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><strong>1 无特权内核</strong></td>
+                        <td>记忆可关闭、不可卸载，是出厂内置特权大件</td>
+                        <td><span class="badge bg-amber-50 text-amber-700">半达标</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>2 能力接缝</strong></td>
+                        <td>LlmRunner 定义 / 提供者 / 消费者完整；Embedding none/openai</td>
+                        <td><span class="badge bg-emerald-50 text-emerald-700">达标</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>3 事实源与投影</strong></td>
+                        <td>JSONL 事实源；SQLite / FTS / 向量 / 场景索引皆可重建</td>
+                        <td><span class="badge bg-blue-600 text-white">完全达标</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>4 真边界校验</strong></td>
+                        <td>持久化 / 注入 / 文件写统一净化</td>
+                        <td><span class="badge bg-emerald-50 text-emerald-700">达标</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>5 显式默认与失败</strong></td>
+                        <td>集中 resolve + clamp；主写失败不推进水位线</td>
+                        <td><span class="badge bg-emerald-50 text-emerald-700">达标</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>6 穷尽与对称</strong></td>
+                        <td>DedupAction 四值、SceneOp 三值；未用 assertNever 强制</td>
+                        <td><span class="badge bg-cyan-50 text-cyan-700">大体达标</span></td>
+                      </tr>
+                      <tr>
+                        <td><strong>7 验证世界</strong></td>
+                        <td>有对抗性边界测试，但断言对象未逐条核实</td>
+                        <td><span class="badge bg-slate-100 text-slate-600">未验证</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="mt-[2%] flex justify-between items-center">
+                <span class="source-chip">store · pipeline · memory-core · extension · adversarial</span>
+                <span class="body-xs text-slate-500">半达标是产品自觉的取舍，不是意外架构泄漏</span>
+              </div>
+            </div>
+
+            <!-- 12 COMPETITIVE -->
+            <div v-else-if="current === 11" class="slide-pad">
+              <div>
+                <div class="eyebrow">Competitive landscape</div>
+                <h2 class="slide-title">跨产品看记忆：anta-agent 的优势是“本地、自动、可审计、缓存友好”</h2>
+              </div>
+
+              <div class="mt-[2.6%] flex-1 min-h-0">
+                <table class="table-lite">
+                  <thead>
+                    <tr>
+                      <th>组件</th>
+                      <th>Claude Code</th>
+                      <th>ChatGPT Memory</th>
+                      <th>Mem0 / Letta</th>
+                      <th>TencentDB Memory</th>
+                      <th class="bg-blue-100 !text-blue-800">anta-agent</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>记忆形态</strong></td>
+                      <td>CLAUDE.md + 目录</td>
+                      <td>闭环产品记忆</td>
+                      <td>SDK / 服务层</td>
+                      <td>四层 L0–L3</td>
+                      <td class="bg-blue-50/60"><strong>四层，同源移植</strong></td>
+                    </tr>
+                    <tr>
+                      <td><strong>写入</strong></td>
+                      <td>手写为主</td>
+                      <td>自动黑盒</td>
+                      <td>API 显式调用</td>
+                      <td>自动流水线</td>
+                      <td class="bg-blue-50/60"><strong>全自动、后台执行</strong></td>
+                    </tr>
+                    <tr>
+                      <td><strong>去重 / 冲突</strong></td>
+                      <td>无</td>
+                      <td>黑盒</td>
+                      <td>库内处理</td>
+                      <td>LLM 批量决策</td>
+                      <td class="bg-blue-50/60"><strong>store/update/merge/skip</strong></td>
+                    </tr>
+                    <tr>
+                      <td><strong>检索</strong></td>
+                      <td>文件全量注入</td>
+                      <td>黑盒</td>
+                      <td>SDK 混合检索</td>
+                      <td>服务端混合</td>
+                      <td class="bg-blue-50/60"><strong>FTS5 + 向量 RRF 本地</strong></td>
+                    </tr>
+                    <tr>
+                      <td><strong>注入</strong></td>
+                      <td>系统提示常驻</td>
+                      <td>黑盒</td>
+                      <td>宿主决定</td>
+                      <td>宿主决定</td>
+                      <td class="bg-blue-50/60"><strong>动态用户消息 + 稳定系统尾部</strong></td>
+                    </tr>
+                    <tr>
+                      <td><strong>审计</strong></td>
+                      <td>文件可读</td>
+                      <td>不可见</td>
+                      <td>视实现</td>
+                      <td>服务端日志</td>
+                      <td class="bg-blue-50/60"><strong>全量审计 + JSONL 真相源</strong></td>
+                    </tr>
+                    <tr>
+                      <td><strong>部署形态</strong></td>
+                      <td>闭源产品</td>
+                      <td>云产品</td>
+                      <td>SDK / 服务</td>
+                      <td>企业远程服务</td>
+                      <td class="bg-blue-50/60"><strong>单机个人版、MIT</strong></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="grid grid-cols-4 gap-2 mt-[2%]">
+                <div class="rounded-xl bg-blue-50 border border-blue-200 p-3">
+                  <div class="mini-label text-blue-700">独特组合 01</div>
+                  <div class="body-sm font-bold mt-1">开源编码 Agent</div>
+                </div>
+                <div class="rounded-xl bg-cyan-50 border border-cyan-200 p-3">
+                  <div class="mini-label text-cyan-700">独特组合 02</div>
+                  <div class="body-sm font-bold mt-1">四层自动记忆</div>
+                </div>
+                <div class="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+                  <div class="mini-label text-emerald-700">独特组合 03</div>
+                  <div class="body-sm font-bold mt-1">全本地事实源</div>
+                </div>
+                <div class="rounded-xl bg-amber-50 border border-amber-200 p-3">
+                  <div class="mini-label text-amber-700">独特组合 04</div>
+                  <div class="body-sm font-bold mt-1">缓存友好注入</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 13 ECONOMICS -->
+            <div v-else-if="current === 12" class="slide-pad">
+              <div>
+                <div class="eyebrow">Economics & operating profile</div>
+                <h2 class="slide-title">成本结构透明：前台轻，后台蒸馏并不免费</h2>
+              </div>
+
+              <div class="grid grid-cols-4 gap-[1.4%] mt-[3%]">
+                <div class="card p-[5%]">
+                  <div class="mini-label">SYSTEM PROMPT</div>
+                  <div class="metric-value text-blue-700 mt-3">~2–3K</div>
+                  <div class="body-xs text-slate-500 mt-2">底座约 1K + 稳定记忆段约 1–2K token</div>
+                </div>
+                <div class="card p-[5%]">
+                  <div class="mini-label">DYNAMIC RECALL</div>
+                  <div class="metric-value text-cyan-700 mt-3">≤5 条</div>
+                  <div class="body-xs text-slate-500 mt-2">每轮贴最后一条用户消息，预算可配</div>
+                </div>
+                <div class="card p-[5%]">
+                  <div class="mini-label">BACKGROUND</div>
+                  <div class="metric-value text-amber-700 mt-3">+10–20%</div>
+                  <div class="body-xs text-slate-500 mt-2">重度使用日的估计 token 增量</div>
+                </div>
+                <div class="card p-[5%]">
+                  <div class="mini-label">CODE SIZE</div>
+                  <div class="metric-value text-emerald-700 mt-3">~4.6K</div>
+                  <div class="body-xs text-slate-500 mt-2">src 行数；测试约 1.7K 行</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-[1.05fr_.95fr] gap-[2%] mt-[2.3%] flex-1 min-h-0">
+                <div class="card-flat p-[3.5%]">
+                  <div class="title-sm">每 5 轮的典型后台路径</div>
+                  <div class="mt-4 grid grid-cols-[1fr_28px_1fr_28px_1fr] items-center">
+                    <div class="rounded-xl bg-cyan-50 border border-cyan-200 p-3 text-center">
+                      <div class="body-sm font-bold">提取</div>
+                      <div class="body-xs text-slate-500 mt-1">1 次 LLM</div>
+                    </div>
+                    <i data-lucide="arrow-right" class="w-4 h-4 text-slate-400"></i>
+                    <div class="rounded-xl bg-blue-50 border border-blue-200 p-3 text-center">
+                      <div class="body-sm font-bold">去重</div>
+                      <div class="body-xs text-slate-500 mt-1">1 次 LLM</div>
+                    </div>
+                    <i data-lucide="arrow-right" class="w-4 h-4 text-slate-400"></i>
+                    <div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-center">
+                      <div class="body-sm font-bold">L2 / L3</div>
+                      <div class="body-xs text-slate-500 mt-1">定期触发</div>
+                    </div>
+                  </div>
+                  <div class="mt-4 rounded-xl bg-white border border-slate-200 p-3 body-xs text-slate-600">
+                    提取、去重、场景与 Persona 均使用<strong>会话同款模型</strong>。因此“自动记忆免费”的叙事不成立。
+                  </div>
+                </div>
+
+                <div class="card-flat p-[3.5%]">
+                  <div class="title-sm">部署与依赖</div>
+                  <div class="mt-3 space-y-2 body-xs">
+                    <div class="flex justify-between rounded-lg bg-white border border-slate-200 p-2.5"><span>数据目录</span><strong class="mono">~/.anta-agent</strong></div>
+                    <div class="flex justify-between rounded-lg bg-white border border-slate-200 p-2.5"><span>嵌入默认</span><strong>关闭 / 零外发</strong></div>
+                    <div class="flex justify-between rounded-lg bg-white border border-slate-200 p-2.5"><span>原生数据库</span><strong>node:sqlite</strong></div>
+                    <div class="flex justify-between rounded-lg bg-white border border-slate-200 p-2.5"><span>额外依赖</span><strong>typebox + undici 8.9.0</strong></div>
+                    <div class="flex justify-between rounded-lg bg-white border border-slate-200 p-2.5"><span>原生编译</span><strong>零</strong></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-[2%] rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white px-[3%] py-[1.35%] flex items-center justify-between">
+                <span class="body-sm font-bold">成本开关</span>
+                <span class="mono body-xs bg-white/15 rounded-lg px-3 py-1.5">{"memory":{"enabled":false}}</span>
+                <span class="body-xs text-blue-50">一行配置退化为普通编码 agent</span>
+              </div>
+            </div>
+
+            <!-- 14 CRITIQUE -->
+            <div v-else-if="current === 13" class="slide-pad">
+              <div>
+                <div class="eyebrow">Adversarial review</div>
+                <h2 class="slide-title">诚实批评：真正风险在质量、成本与单机边界</h2>
+              </div>
+
+              <div class="grid grid-cols-2 gap-[1.4%] mt-[2.6%] flex-1 min-h-0">
+                <div v-for="risk in risks" :key="risk.title" class="rounded-xl border p-[2.7%] flex gap-3" :class="risk.className">
+                  <div class="w-7 h-7 rounded-lg bg-white/70 flex items-center justify-center shrink-0 font-extrabold text-[11px]">{{ risk.no }}</div>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                      <div class="body-sm font-extrabold">{{ risk.title }}</div>
+                      <span class="badge !px-2 !py-0.5 bg-white/60 border border-current/20">{{ risk.judgement }}</span>
+                    </div>
+                    <div class="body-xs mt-1 opacity-90">{{ risk.detail }}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-[1.8%] grid grid-cols-[1fr_1fr_1fr] gap-2">
+                <div class="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+                  <div class="mini-label text-emerald-700">工程上已兑现</div>
+                  <div class="body-xs font-semibold mt-1">生命周期、崩溃恢复、缓存设计、fail-soft</div>
+                </div>
+                <div class="rounded-xl bg-amber-50 border border-amber-200 p-3">
+                  <div class="mini-label text-amber-700">产品赌注</div>
+                  <div class="body-xs font-semibold mt-1">长期蒸馏收益能否覆盖 token 成本</div>
+                </div>
+                <div class="rounded-xl bg-rose-50 border border-rose-200 p-3">
+                  <div class="mini-label text-rose-700">当前硬边界</div>
+                  <div class="body-xs font-semibold mt-1">单机单进程、缺少单条回滚、语义检测未接线</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 15 ROADMAP -->
+            <div v-else-if="current === 14" class="slide-pad">
+              <div>
+                <div class="eyebrow">Product status & roadmap</div>
+                <h2 class="slide-title">已完成核心闭环，下一步是把“个人版”边界补完整</h2>
+              </div>
+
+              <div class="grid grid-cols-[.95fr_1.05fr] gap-[2%] mt-[3%] flex-1 min-h-0">
+                <div class="card p-[4%]">
+                  <div class="flex justify-between items-center">
+                    <div class="title-md">当前状态</div>
+                    <span class="badge bg-blue-50 text-blue-700 border border-blue-200">v0.84.9</span>
+                  </div>
+
+                  <div class="mt-4 space-y-3">
+                    <div class="flex gap-3">
+                      <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><i data-lucide="check" class="w-4 h-4"></i></div>
+                      <div><div class="body-sm font-bold">已接入仓库构建链与 workspaces</div><div class="body-xs text-slate-500">发布包网络与资产配置自包含</div></div>
+                    </div>
+                    <div class="flex gap-3">
+                      <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><i data-lucide="test-tube-2" class="w-4 h-4"></i></div>
+                      <div><div class="body-sm font-bold">五类测试</div><div class="body-xs text-slate-500">store / pipeline / memory-core / extension / adversarial</div></div>
+                    </div>
+                    <div class="flex gap-3">
+                      <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0"><i data-lucide="package-x" class="w-4 h-4"></i></div>
+                      <div><div class="body-sm font-bold">尚未发布 npm</div><div class="body-xs text-slate-500">CHANGELOG [Unreleased] 仅 initial release</div></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card p-[4%]">
+                  <div class="title-md">优先路线图</div>
+                  <div class="mt-4 space-y-3">
+                    <div class="rounded-xl bg-blue-50 border border-blue-200 p-3 flex items-center gap-3">
+                      <span class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">1</span>
+                      <div><div class="body-sm font-bold">多实例并发保护</div><div class="body-xs text-slate-500">避免两个 at 实例共享目录时的单写者冲突</div></div>
+                    </div>
+                    <div class="rounded-xl bg-cyan-50 border border-cyan-200 p-3 flex items-center gap-3">
+                      <span class="w-8 h-8 rounded-full bg-cyan-600 text-white flex items-center justify-center font-bold text-xs">2</span>
+                      <div><div class="body-sm font-bold">/memory 单条回滚</div><div class="body-xs text-slate-500">把现有审计与备份转化为可操作纠错能力</div></div>
+                    </div>
+                    <div class="rounded-xl bg-emerald-50 border border-emerald-200 p-3 flex items-center gap-3">
+                      <span class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">3</span>
+                      <div><div class="body-sm font-bold">注入检测生产接线</div><div class="body-xs text-slate-500">在不破坏 fail-soft 的前提下补上语义告警</div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-[2%] rounded-2xl bg-slate-900 text-white p-[2.8%]">
+                <div class="grid grid-cols-[.78fr_1.22fr] gap-[4%] items-center">
+                  <div>
+                    <div class="mini-label !text-cyan-300">REMOTE MEMORY</div>
+                    <div class="title-md mt-1">官方预留，但不侵入本地契约</div>
+                  </div>
+                  <div class="body-xs text-slate-300">
+                    未来远程记忆后端必须通过 <strong class="text-white">host-neutral facade</strong> 接入。
+                    TencentDB 的 Proxy / Knowledge / ACL / 分布式 worker 不在当前个人版范围。
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 16 DECISION -->
+            <div v-else class="slide-pad grid-paper relative">
+              <div class="soft-orb w-[32%] aspect-square bg-blue-100/70 -left-[12%] -bottom-[30%]"></div>
+              <div class="soft-orb w-[28%] aspect-square bg-cyan-100/60 -right-[8%] -top-[25%]"></div>
+
+              <div class="relative z-10">
+                <div class="eyebrow">Selection guide</div>
+                <h2 class="slide-title">选型结论：先判断你要的是“工具”，还是“长期关系”</h2>
+              </div>
+
+              <div class="grid grid-cols-5 gap-[1.2%] mt-[4%] relative z-10">
+                <div class="decision-arrow rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white p-[5%] shadow-lg shadow-blue-200">
+                  <i data-lucide="brain-circuit" class="w-7 h-7"></i>
+                  <div class="title-sm mt-4">anta-agent</div>
+                  <div class="body-xs text-blue-50 mt-2">越用越懂你；多项目、高频、全本地</div>
+                  <div class="mt-5 badge bg-white/15 text-white">首选：长期个人编码</div>
+                </div>
+                <div class="decision-arrow card p-[5%]">
+                  <i data-lucide="blocks" class="w-7 h-7 text-violet-600"></i>
+                  <div class="title-sm mt-4">Claude Code</div>
+                  <div class="body-xs text-slate-500 mt-2">开箱大项目重构、成熟产品与 IDE 体验</div>
+                  <div class="mt-5 badge bg-violet-50 text-violet-700">产品完成度</div>
+                </div>
+                <div class="decision-arrow card p-[5%]">
+                  <i data-lucide="network" class="w-7 h-7 text-slate-700"></i>
+                  <div class="title-sm mt-4">DSH 路线</div>
+                  <div class="body-xs text-slate-500 mt-2">自建插件化 Agent 平台，一切可替换可回放</div>
+                  <div class="mt-5 badge bg-slate-100 text-slate-700">平台自由度</div>
+                </div>
+                <div class="decision-arrow card p-[5%]">
+                  <i data-lucide="building-2" class="w-7 h-7 text-emerald-600"></i>
+                  <div class="title-sm mt-4">TencentDB</div>
+                  <div class="body-xs text-slate-500 mt-2">团队、多租户、远程记忆与企业服务</div>
+                  <div class="mt-5 badge bg-emerald-50 text-emerald-700">企业记忆</div>
+                </div>
+                <div class="card p-[5%]">
+                  <i data-lucide="library" class="w-7 h-7 text-amber-600"></i>
+                  <div class="title-sm mt-4">Mem0 类 SDK</div>
+                  <div class="body-xs text-slate-500 mt-2">已有自研 Agent，只需要独立记忆层</div>
+                  <div class="mt-5 badge bg-amber-50 text-amber-700">记忆组件</div>
+                </div>
+              </div>
+
+              <div class="mt-[4%] relative z-10 rounded-2xl border border-blue-200 bg-white/90 shadow-lg p-[3.2%] grid grid-cols-[1.1fr_.9fr] gap-[5%] items-center">
+                <div>
+                  <div class="text-[clamp(20px,2.4vw,32px)] font-extrabold tracking-tight">
+                    anta-agent 的产品价值，不是“记得更多”。
+                  </div>
+                  <div class="text-[clamp(14px,1.55vw,21px)] text-blue-700 font-bold mt-2">
+                    是把跨会话连续性做成可恢复、可审计、可关闭的工程系统。
+                  </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <div class="text-center rounded-xl bg-blue-50 p-3">
+                    <i data-lucide="refresh-cw" class="w-5 h-5 text-blue-600 mx-auto"></i>
+                    <div class="body-xs font-bold mt-2">可恢复</div>
+                  </div>
+                  <div class="text-center rounded-xl bg-cyan-50 p-3">
+                    <i data-lucide="clipboard-check" class="w-5 h-5 text-cyan-600 mx-auto"></i>
+                    <div class="body-xs font-bold mt-2">可审计</div>
+                  </div>
+                  <div class="text-center rounded-xl bg-emerald-50 p-3">
+                    <i data-lucide="toggle-right" class="w-5 h-5 text-emerald-600 mx-auto"></i>
+                    <div class="body-xs font-bold mt-2">可关闭</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-auto relative z-10 flex justify-between items-end">
+                <div>
+                  <div class="text-sm font-extrabold">anta-agent</div>
+                  <div class="body-xs text-slate-500 mt-1">Long-term memory, built into the coding loop.</div>
+                </div>
+                <div class="text-right">
+                  <span class="source-chip">MIT · v0.84.9 · Node ≥22.19</span>
+                  <div class="body-xs text-slate-400 mt-2">源码核实基线：packages/anta-agent</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="absolute bottom-[2.1%] right-[2.5%] text-[8px] font-bold tracking-wider text-slate-300">
+              {{ String(current + 1).padStart(2, '0') }}
+            </div>
+          </article>
+        </transition>
+      </section>
+
+      <footer class="footerbar px-4 md:px-6 flex items-center gap-4">
+        <div class="flex gap-2">
+          <button class="control-btn" @click="prev" :disabled="current === 0" title="上一页">
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          </button>
+          <button class="control-btn" @click="next" :disabled="current === slides.length - 1" title="下一页">
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="flex-1">
+          <div class="flex justify-between text-[9px] text-slate-500 mb-1.5">
+            <span>{{ slides[current].title }}</span>
+            <span>{{ current + 1 }} / {{ slides.length }}</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-bar" :style="{ width: ((current + 1) / slides.length * 100) + '%' }"></div>
+          </div>
+        </div>
+
+        <div class="hidden sm:flex items-center gap-2 text-[9px] text-slate-400">
+          <span class="rounded border border-slate-300 bg-white px-1.5 py-0.5">←</span>
+          <span class="rounded border border-slate-300 bg-white px-1.5 py-0.5">→</span>
+          <span>翻页</span>
+        </div>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script>
+  const { createApp, ref, nextTick, watch, onMounted, onBeforeUnmount } = Vue;
+
+  createApp({
+    setup() {
+      const current = ref(0);
+      const sidebarCollapsed = ref(false);
+
+      const slides = [
+        { title: "封面", kicker: "长期记忆出厂内置的开源编码 Agent" },
+        { title: "核心定位", kicker: "极小内核，唯一预装的大件是记忆" },
+        { title: "产品能力面", kicker: "模型、工具、交互、扩展与记忆" },
+        { title: "架构解剖", kicker: "壳、接线、适配器与宿主无关核心" },
+        { title: "四层记忆引擎", kicker: "L0 对话到 L3 Persona" },
+        { title: "L0 / L1 蒸馏", kicker: "保真事实源与原子记忆决策" },
+        { title: "L2 / L3 结构化", kicker: "场景导航与长期操作准则" },
+        { title: "调度与可靠性", kicker: "崩溃恢复、水位线与关机协议" },
+        { title: "检索与注入", kicker: "RRF 融合与缓存友好上下文" },
+        { title: "安全边界", kicker: "不可信数据净化与真实能力边界" },
+        { title: "DSH 七模型评分", kicker: "事实源与投影完全达标" },
+        { title: "跨产品对照", kicker: "本地、自动、可审计、缓存友好" },
+        { title: "成本与硬指标", kicker: "前台轻，后台蒸馏不免费" },
+        { title: "反方意见", kicker: "质量、成本与单机边界" },
+        { title: "现状与路线图", kicker: "从核心闭环到个人版完善" },
+        { title: "选型结论", kicker: "工具，还是长期关系" }
+      ];
+
+      const dshScores = [
+        { name: "无特权内核", label: "半达标", score: 58 },
+        { name: "能力接缝三角色", label: "达标", score: 92 },
+        { name: "事实源与投影", label: "完全达标", score: 100 },
+        { name: "真边界校验", label: "达标", score: 94 },
+        { name: "显式默认与失败", label: "达标", score: 92 },
+        { name: "穷尽与对称", label: "大体达标", score: 82 },
+        { name: "验证世界", label: "未核实", score: 48 }
+      ];
+
+      const risks = [
+        {
+          no: "01", title: "蒸馏双花 token", judgement: "成立",
+          detail: "提取、去重、场景、Persona 均调用会话同款模型；重度使用日约多 10–20%。",
+          className: "risk-high"
+        },
+        {
+          no: "02", title: "提取质量看模型脸色", judgement: "成立",
+          detail: "质量主要由 prompt 约束；小模型 JSON 易失败，垃圾记忆仍可能真实入库。",
+          className: "risk-high"
+        },
+        {
+          no: "03", title: "中文 Prompt 硬编码", judgement: "半成立",
+          detail: "输出语言会跟随用户，但三套核心提示主体中文，非中文场景固定 token 开销偏高。",
+          className: "risk-mid"
+        },
+        {
+          no: "04", title: "单机单进程", judgement: "成立",
+          detail: "node:sqlite 单写者；多个 at 实例共用同一数据目录时缺少并发保护。",
+          className: "risk-high"
+        },
+        {
+          no: "05", title: "暴力向量检索", judgement: "不成立",
+          detail: "个人库万级条目线性扫描毫秒级，不引入原生扩展是正确权衡。",
+          className: "risk-low"
+        },
+        {
+          no: "06", title: "污染难回滚", judgement: "半成立",
+          detail: "有审计与双备份，但缺少单条回滚命令；目前需手改 SQLite 或等待后续去重。",
+          className: "risk-mid"
+        },
+        {
+          no: "07", title: "注入检测是摆设", judgement: "成立",
+          detail: "containsPromptInjection 未接生产路径；实际依赖转义、截断与路径白名单。",
+          className: "risk-high"
+        },
+        {
+          no: "08", title: "底座 API 耦合", judgement: "成立",
+          detail: "宿主扩展 API 演进仍需接线层跟进；升级发布时需要重跑资产拷贝。",
+          className: "risk-mid"
+        }
+      ];
+
+      const refreshIcons = () => {
+        nextTick(() => {
+          if (window.lucide) window.lucide.createIcons();
+        });
+      };
+
+      const go = (index) => {
+        current.value = Math.max(0, Math.min(slides.length - 1, index));
+      };
+      const prev = () => go(current.value - 1);
+      const next = () => go(current.value + 1);
+
+      const onKey = (event) => {
+        if (["ArrowRight", "PageDown", " "].includes(event.key)) {
+          event.preventDefault();
+          next();
+        } else if (["ArrowLeft", "PageUp"].includes(event.key)) {
+          event.preventDefault();
+          prev();
+        } else if (event.key === "Home") {
+          event.preventDefault();
+          go(0);
+        } else if (event.key === "End") {
+          event.preventDefault();
+          go(slides.length - 1);
+        } else if (event.key.toLowerCase() === "f") {
+          toggleFullscreen();
+        }
+      };
+
+      const toggleFullscreen = async () => {
+        try {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+          } else {
+            await document.exitFullscreen();
+          }
+        } catch (_) {}
+      };
+
+      watch([current, sidebarCollapsed], refreshIcons);
+
+      onMounted(() => {
+        window.addEventListener("keydown", onKey);
+        refreshIcons();
+      });
+
+      onBeforeUnmount(() => {
+        window.removeEventListener("keydown", onKey);
+      });
+
+      return {
+        current,
+        sidebarCollapsed,
+        slides,
+        dshScores,
+        risks,
+        go,
+        prev,
+        next,
+        toggleFullscreen
+      };
+    }
+  }).mount("#app");
+</script>
+</body>
+</html>
